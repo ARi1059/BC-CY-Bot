@@ -12,10 +12,63 @@ from telegram.ext import (
 
 from bccy_bot.config import settings
 from bccy_bot.db.session import make_engine, make_session_factory
+from bccy_bot.handlers.admin import (
+    admin_mgmt as adm_mgmt,
+    blacklist as adm_blacklist,
+    channels as adm_channels,
+    groups as adm_groups,
+    inviters as adm_inviters,
+    panel as adm_panel,
+    settings_ui as adm_settings,
+    stats as adm_stats,
+    stubs as adm_stubs,
+)
 from bccy_bot.handlers.common import chat_member as chat_member_handler
 from bccy_bot.handlers.inviter import audit as inviter_audit
 from bccy_bot.handlers.user import wizard as wizard_handlers
 from bccy_bot.handlers.user.start import start_command
+from bccy_bot.keyboards.admin_callbacks import (
+    ADM_BACK,
+    ADM_BL_ADD,
+    ADM_BL_LIST,
+    ADM_BL_LIST_PREFIX,
+    ADM_BL_REMOVE_CONFIRM_PREFIX,
+    ADM_BL_REMOVE_PREFIX,
+    ADM_CONFIG,
+    ADM_CONFIG_EDIT_TTL,
+    ADM_DISMISS,
+    ADM_GRP_ADD,
+    ADM_GRP_LIST,
+    ADM_GRP_LIST_PREFIX,
+    ADM_GRP_REMOVE_CONFIRM_PREFIX,
+    ADM_GRP_REMOVE_PREFIX,
+    ADM_INV_ADD,
+    ADM_INV_ADD_CANCEL,
+    ADM_INV_ADD_CONFIRM,
+    ADM_INV_ADD_PICK_GRP_PREFIX,
+    ADM_INV_ADD_SET_MODE_PREFIX,
+    ADM_INV_ADD_TOGGLE_MAT_PREFIX,
+    ADM_INV_LIST,
+    ADM_INV_LIST_PREFIX,
+    ADM_INV_REMOVE_CONFIRM_PREFIX,
+    ADM_INV_REMOVE_PREFIX,
+    ADM_INV_TOGGLE_PREFIX,
+    ADM_KEYS,
+    ADM_LOG_CHANNEL,
+    ADM_LOG_CHANNEL_BIND,
+    ADM_LOG_CHANNEL_UNBIND,
+    ADM_MGMT_ADD,
+    ADM_MGMT_LIST,
+    ADM_MGMT_REMOVE_CONFIRM_PREFIX,
+    ADM_MGMT_REMOVE_PREFIX,
+    ADM_MGMT_TRANSFER_CONFIRM_PREFIX,
+    ADM_MGMT_TRANSFER_PREFIX,
+    ADM_PENDING,
+    ADM_REPORT_CHANNEL,
+    ADM_REPORT_CHANNEL_BIND,
+    ADM_REPORT_CHANNEL_UNBIND,
+    ADM_STATS,
+)
 from bccy_bot.keyboards.callback_data import (
     INVITER_APPROVE_PREFIX,
     INVITER_REJECT_PREFIX,
@@ -101,6 +154,7 @@ def build_application() -> Application:
     # === Commands ===
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", wizard_handlers.on_help))
+    application.add_handler(CommandHandler("admin", adm_panel.admin_command))
 
     # === Welcome card callbacks ===
     application.add_handler(CallbackQueryHandler(wizard_handlers.on_start_apply, pattern=f"^{USER_START_APPLY}$"))
@@ -161,6 +215,119 @@ def build_application() -> Application:
             wizard_handlers.on_material_message,
         )
     )
+
+    # === Admin: 主面板 & 返回 ===
+    application.add_handler(CallbackQueryHandler(adm_panel.on_back_to_panel, pattern=f"^{ADM_BACK}$"))
+    application.add_handler(CallbackQueryHandler(adm_panel.on_dismiss, pattern=f"^{ADM_DISMISS}$"))
+
+    # === Admin: groups ===
+    application.add_handler(
+        CallbackQueryHandler(adm_groups.on_list, pattern=f"^({ADM_GRP_LIST}|{ADM_GRP_LIST_PREFIX}\\d+)$")
+    )
+    application.add_handler(CallbackQueryHandler(adm_groups.on_add, pattern=f"^{ADM_GRP_ADD}$"))
+    application.add_handler(
+        CallbackQueryHandler(adm_groups.on_remove, pattern=f"^{ADM_GRP_REMOVE_PREFIX}\\d+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            adm_groups.on_remove_confirm, pattern=f"^{ADM_GRP_REMOVE_CONFIRM_PREFIX}\\d+$"
+        )
+    )
+
+    # === Admin: inviters ===
+    application.add_handler(
+        CallbackQueryHandler(adm_inviters.on_list, pattern=f"^({ADM_INV_LIST}|{ADM_INV_LIST_PREFIX}\\d+)$")
+    )
+    application.add_handler(CallbackQueryHandler(adm_inviters.on_add, pattern=f"^{ADM_INV_ADD}$"))
+    application.add_handler(
+        CallbackQueryHandler(adm_inviters.on_add_pick_group, pattern=f"^{ADM_INV_ADD_PICK_GRP_PREFIX}\\d+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_inviters.on_add_toggle_material, pattern=f"^{ADM_INV_ADD_TOGGLE_MAT_PREFIX}.+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_inviters.on_add_set_mode, pattern=f"^{ADM_INV_ADD_SET_MODE_PREFIX}.+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_inviters.on_add_confirm, pattern=f"^{ADM_INV_ADD_CONFIRM}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_inviters.on_add_cancel, pattern=f"^{ADM_INV_ADD_CANCEL}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_inviters.on_toggle, pattern=f"^{ADM_INV_TOGGLE_PREFIX}\\d+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_inviters.on_remove, pattern=f"^{ADM_INV_REMOVE_PREFIX}\\d+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            adm_inviters.on_remove_confirm, pattern=f"^{ADM_INV_REMOVE_CONFIRM_PREFIX}\\d+$"
+        )
+    )
+
+    # === Admin: blacklist ===
+    application.add_handler(
+        CallbackQueryHandler(
+            adm_blacklist.on_list, pattern=f"^({ADM_BL_LIST}|{ADM_BL_LIST_PREFIX}\\d+)$"
+        )
+    )
+    application.add_handler(CallbackQueryHandler(adm_blacklist.on_add, pattern=f"^{ADM_BL_ADD}$"))
+    application.add_handler(
+        CallbackQueryHandler(adm_blacklist.on_remove, pattern=f"^{ADM_BL_REMOVE_PREFIX}\\d+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            adm_blacklist.on_remove_confirm, pattern=f"^{ADM_BL_REMOVE_CONFIRM_PREFIX}\\d+$"
+        )
+    )
+
+    # === Admin: admins management ===
+    application.add_handler(CallbackQueryHandler(adm_mgmt.on_list, pattern=f"^{ADM_MGMT_LIST}$"))
+    application.add_handler(CallbackQueryHandler(adm_mgmt.on_add, pattern=f"^{ADM_MGMT_ADD}$"))
+    application.add_handler(
+        CallbackQueryHandler(adm_mgmt.on_remove, pattern=f"^{ADM_MGMT_REMOVE_PREFIX}\\d+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_mgmt.on_remove_confirm, pattern=f"^{ADM_MGMT_REMOVE_CONFIRM_PREFIX}\\d+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_mgmt.on_transfer, pattern=f"^{ADM_MGMT_TRANSFER_PREFIX}\\d+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            adm_mgmt.on_transfer_confirm, pattern=f"^{ADM_MGMT_TRANSFER_CONFIRM_PREFIX}\\d+$"
+        )
+    )
+
+    # === Admin: channels ===
+    application.add_handler(CallbackQueryHandler(adm_channels.on_log_panel, pattern=f"^{ADM_LOG_CHANNEL}$"))
+    application.add_handler(
+        CallbackQueryHandler(adm_channels.on_log_bind, pattern=f"^{ADM_LOG_CHANNEL_BIND}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_channels.on_log_unbind, pattern=f"^{ADM_LOG_CHANNEL_UNBIND}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_channels.on_report_panel, pattern=f"^{ADM_REPORT_CHANNEL}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_channels.on_report_bind, pattern=f"^{ADM_REPORT_CHANNEL_BIND}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_channels.on_report_unbind, pattern=f"^{ADM_REPORT_CHANNEL_UNBIND}$")
+    )
+
+    # === Admin: system config ===
+    application.add_handler(CallbackQueryHandler(adm_settings.on_panel, pattern=f"^{ADM_CONFIG}$"))
+    application.add_handler(
+        CallbackQueryHandler(adm_settings.on_edit_ttl, pattern=f"^{ADM_CONFIG_EDIT_TTL}$")
+    )
+
+    # === Admin: stats / stubs ===
+    application.add_handler(CallbackQueryHandler(adm_stats.on_stats, pattern=f"^{ADM_STATS}$"))
+    application.add_handler(CallbackQueryHandler(adm_stubs.on_pending, pattern=f"^{ADM_PENDING}$"))
+    application.add_handler(CallbackQueryHandler(adm_stubs.on_keys, pattern=f"^{ADM_KEYS}$"))
 
     # === chat_member 更新（监听入群事件） ===
     application.add_handler(

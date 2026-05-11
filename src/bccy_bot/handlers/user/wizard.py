@@ -24,6 +24,14 @@ from bccy_bot.keyboards.factory import (
     existing_pending_keyboard,
     welcome_keyboard,
 )
+from bccy_bot.handlers.admin import (
+    admin_mgmt as adm_mgmt_handlers,
+    blacklist as adm_blacklist_handlers,
+    channels as adm_channels_handlers,
+    groups as adm_groups_handlers,
+    inviters as adm_inviters_handlers,
+    settings_ui as adm_settings_handlers,
+)
 from bccy_bot.handlers.inviter import audit as inviter_audit
 from bccy_bot.repositories import application_repo, blacklist_repo
 from bccy_bot.services import audit_service, wizard_service
@@ -304,13 +312,23 @@ async def on_preview_redo(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def on_material_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """处理私聊文本/图片：优先消费"等待拒绝原因"的 inviter 输入，再走 wizard。"""
+    """私聊消息分发：按优先级让各模块消费 awaiting 输入，最后才落到 wizard 材料处理。"""
     if update.effective_user is None or update.message is None:
         return
 
-    # 审核者可能正在被等待"拒绝原因"文本输入 —— 先消费
-    if await inviter_audit.consume_reject_reason_text(update, context):
-        return
+    # 顺序消费各种 awaiting 状态
+    consumers = (
+        inviter_audit.consume_reject_reason_text,
+        adm_groups_handlers.consume_add_group_forward,
+        adm_inviters_handlers.consume_add_inviter_text,
+        adm_blacklist_handlers.consume_add_blacklist_text,
+        adm_mgmt_handlers.consume_add_admin_text,
+        adm_channels_handlers.consume_bind_channel_forward,
+        adm_settings_handlers.consume_edit_ttl_text,
+    )
+    for c in consumers:
+        if await c(update, context):
+            return
 
     user = update.effective_user
     message = update.message
