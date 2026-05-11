@@ -41,7 +41,12 @@ from bccy_bot.keyboards.factory import (
     reject_choice_keyboard,
 )
 from bccy_bot.repositories import admin_repo, application_repo, inviter_repo
-from bccy_bot.services import invite_link_service, log_channel_service, recovery_key_service
+from bccy_bot.services import (
+    attack_report_service,
+    invite_link_service,
+    log_channel_service,
+    recovery_key_service,
+)
 from bccy_bot.utils.retry import telegram_retry
 
 log = structlog.get_logger()
@@ -351,6 +356,12 @@ async def approve_application(
         )
     except Exception:  # noqa: BLE001
         log.exception("log_channel_approval_failed", application_id=application.id)
+
+    # 7. 出击报告频道：仅当含 MAT_REPORT 材料 + 频道已配置时转发
+    try:
+        await attack_report_service.forward_report(session, bot, application)
+    except Exception:  # noqa: BLE001
+        log.exception("attack_report_forward_failed_outer", application_id=application.id)
 
     log.info(
         "application_approved",

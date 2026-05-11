@@ -16,7 +16,7 @@
 | M4 | 链接使用追踪 + chat_member 监听 | 1d | ✅ 已完成 | 2026-05-12 |
 | M5 | 管理员面板（含主/副分层 + 系统配置） | 2d | ✅ 已完成 | 2026-05-12 |
 | M6 | 日志频道（5 类事件卡片） | 1d | ✅ 已完成 | 2026-05-12 |
-| M7 | 出击报告频道（仅转发报告） | 1d | ⬜ 未开始 | – |
+| M7 | 出击报告频道（仅转发报告） | 1d | ✅ 已完成 | 2026-05-12 |
 | M8 | 回群密钥（含原账号清理） | 2d | ⬜ 未开始 | – |
 | M9 | 邀请人面板 `/panel` + 统计报表 | 1d | ⬜ 未开始 | – |
 | M10 | Docker 化 + 部署文档 + 联调 | 1.5d | ⬜ 未开始 | – |
@@ -286,21 +286,24 @@ BC-CY-Bot/
 
 ---
 
-### M7 出击报告频道转发（1 天）
+### M7 出击报告频道转发（1 天） ✅
 
 **目标**：审核通过时，**仅**用 forwardMessage 把出击报告原始消息转发到频道。
 
-- [ ] `services/attack_report_service.py`
-- [ ] 触发时机：M2 通过流程末尾
-- [ ] 严格边界（[REQ §3.7.3](REQUIREMENTS.md)）：
-  - [ ] 仅 forwardMessage `material_type='出击报告'` 那条记录的 `original_message_id`
-  - [ ] **不**转发约课记录/上课手势图片
-  - [ ] **不**附加任何元信息
-- [ ] 写 attack_report_forwards 表（status / channel_id 快照 / message_id）
-- [ ] 跳过场景：申请无出击报告材料 / 频道未配置
-- [ ] 失败重试 3 次 + 日志频道告警
+- [x] `services/attack_report_service.py` + `forward_report` 单一入口
+- [x] 触发时机：在 `audit_service.approve_application` 尾部（位于日志频道推送之后）
+- [x] 严格边界（[REQ §3.7.3](REQUIREMENTS.md)）：
+  - [x] 仅 `forwardMessage` 查询到的 `material_type='出击报告'` 那条记录的 `original_message_id`
+  - [x] **不**转发约课记录/上课手势图片
+  - [x] **不**附加任何元信息卡片（含申请 ID 也不带）
+- [x] 写 `attack_report_forwards` 表（4 种 status：sent / failed / skipped_no_report / skipped_no_channel）
+- [x] `channel_id` 写入快照（更换频道后历史记录仍可回溯）
+- [x] 跳过场景：申请无出击报告材料 / 频道未配置 / channel_id 非法
+- [x] `disable_notification=True` 静默推送，不打扰频道观察者
+- [x] 失败重试 3 次（复用 `utils/retry.telegram_retry`）后写 `status='failed'`，不阻塞 approve 主流程
+- [x] 测试：7 个新用例覆盖正常转发 / 无报告 / 无频道 / 非法 channel_id / 失败 / 多次调用各写一行 / 快照不随配置变更
 
-**验收**：审核通过后，频道内只看到 "Forwarded from <用户>" 的出击报告文本；attack_report_forwards 表有对应记录。
+**验收**：✅ 77/77 单元测试通过（M7 新增 7）；严格只发报告原消息，不带任何额外消息；4 种状态全部走通。
 
 ---
 
@@ -437,12 +440,12 @@ mypy = "*"
 
 ## 10. 当前下一步
 
-**☞ M6 ✅ 完成。等待用户确认即可进入 M7（出击报告频道转发）**
+**☞ M7 ✅ 完成。等待用户确认即可进入 M8（回群密钥使用与原账号清理）**
 
-M7 启动时执行：
-1. 创建特性分支 `feature/M7-attack-report`
-2. 在 approve 流程中 forwardMessage 出击报告到独立频道
-3. 完成后合并到 main，进入 M8
+M8 启动时执行：
+1. 创建特性分支 `feature/M8-recovery-key`
+2. 实现 `[🔑 我有回群密钥]` 完整流程 + 7 条校验 + 原账号清理（踢/封）
+3. 完成后合并到 main，进入 M9
 
 ---
 
@@ -451,6 +454,12 @@ M7 启动时执行：
 > 开发过程中的偏离决策、阻塞、关键判断在此追加。每条带日期。
 
 - `2026-05-12` 文档创建，与 REQUIREMENTS v1.0 对齐，未进入开发。
+- `2026-05-12` **M7 完成**。关键决策与发现：
+  - **每次尝试都写一行 attack_report_forwards**：而不是 upsert 一行，便于追溯重试历史（含失败尝试与最终成功）。
+  - **forward_report 总是写一行**：哪怕跳过也写 status='skipped_*'，方便统计与排查（例如"为什么这个申请没出现在频道"）。
+  - **forward_message 用 telegram_retry**：与其他 Telegram 调用一致，3 次指数退避后再写 failed。
+  - **channel_id 快照**：record.channel_id 在写入时复制；后续 settings 表变更不会影响旧记录。
+  - **failure 主流程不阻塞**：approve_application 中用 try/except 包裹，BadRequest/任意异常都被吞掉只 log，确保 approved 状态已落盘前提下出击报告失败不会让用户卡住。
 - `2026-05-12` **M6 完成**。关键决策与发现：
   - **每个事件 hook 独立 try/except**：不让日志频道失败拖累主流程（pending/approved/rejected/link_used 都是关键路径状态变更）。
   - **链接 URL 脱敏**：`https://t.me/+ABCDEFG` → `https://t.me/+ABCD****`，平衡可追溯（前缀可对）与防外泄（完整码不暴露）。
@@ -502,5 +511,5 @@ M7 启动时执行：
 
 ---
 
-**文档版本：v0.8（M6 完成）**
+**文档版本：v0.9（M7 完成）**
 **最后更新：2026-05-12**
