@@ -9,9 +9,15 @@ from telegram.ext import (
 
 from bccy_bot.config import settings
 from bccy_bot.db.session import make_engine, make_session_factory
+from bccy_bot.handlers.inviter import audit as inviter_audit
 from bccy_bot.handlers.user import wizard as wizard_handlers
 from bccy_bot.handlers.user.start import start_command
 from bccy_bot.keyboards.callback_data import (
+    INVITER_APPROVE_PREFIX,
+    INVITER_REJECT_PREFIX,
+    INVITER_REJECT_REASON_PREFIX,
+    INVITER_REJECT_SKIP_PREFIX,
+    INVITER_VIEW_MATERIALS_PREFIX,
     USER_BACK,
     USER_CANCEL,
     USER_CANCEL_AND_RESTART,
@@ -99,6 +105,23 @@ def build_application() -> Application:
     )
     application.add_handler(
         CallbackQueryHandler(wizard_handlers.on_preview_redo, pattern=f"^{USER_PREVIEW_REDO}$")
+    )
+
+    # === Inviter audit callbacks ===
+    application.add_handler(
+        CallbackQueryHandler(inviter_audit.on_approve, pattern=f"^{INVITER_APPROVE_PREFIX}\\d+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(inviter_audit.on_reject, pattern=f"^{INVITER_REJECT_PREFIX}\\d+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(inviter_audit.on_reject_reason, pattern=f"^{INVITER_REJECT_REASON_PREFIX}\\d+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(inviter_audit.on_reject_skip, pattern=f"^{INVITER_REJECT_SKIP_PREFIX}\\d+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(inviter_audit.on_view_materials, pattern=f"^{INVITER_VIEW_MATERIALS_PREFIX}\\d+$")
     )
 
     # === Material messages (photo / text in private chat) ===

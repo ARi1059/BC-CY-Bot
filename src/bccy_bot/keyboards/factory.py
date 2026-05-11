@@ -4,6 +4,11 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bccy_bot.db.models.inviter import Inviter
 from bccy_bot.keyboards.callback_data import (
+    INVITER_APPROVE_PREFIX,
+    INVITER_REJECT_PREFIX,
+    INVITER_REJECT_REASON_PREFIX,
+    INVITER_REJECT_SKIP_PREFIX,
+    INVITER_VIEW_MATERIALS_PREFIX,
     USER_BACK,
     USER_CANCEL,
     USER_CANCEL_AND_RESTART,
@@ -101,5 +106,56 @@ def cancel_confirm_keyboard() -> InlineKeyboardMarkup:
         [
             [InlineKeyboardButton("✅ 确认取消", callback_data=USER_CONFIRM_CANCEL)],
             [InlineKeyboardButton("« 不取消，继续", callback_data=USER_DISMISS)],
+        ]
+    )
+
+
+# === 审核侧按钮 ===
+
+
+def audit_keyboard(application_id: int) -> InlineKeyboardMarkup:
+    """审核消息 ②：通过 / 拒绝 / 重发材料。"""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("✅ 通过", callback_data=f"{INVITER_APPROVE_PREFIX}{application_id}"),
+                InlineKeyboardButton("❌ 拒绝", callback_data=f"{INVITER_REJECT_PREFIX}{application_id}"),
+            ],
+            [
+                InlineKeyboardButton(
+                    "👁 重发审核材料",
+                    callback_data=f"{INVITER_VIEW_MATERIALS_PREFIX}{application_id}",
+                )
+            ],
+        ]
+    )
+
+
+def reject_choice_keyboard(application_id: int) -> InlineKeyboardMarkup:
+    """点击拒绝后的二级菜单：填写原因 / 跳过直接拒绝。"""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "✏️ 填写原因", callback_data=f"{INVITER_REJECT_REASON_PREFIX}{application_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "⏩ 跳过直接拒绝", callback_data=f"{INVITER_REJECT_SKIP_PREFIX}{application_id}"
+                )
+            ],
+        ]
+    )
+
+
+# === 通过后给申请人的链接按钮 ===
+
+
+def applicant_link_keyboard(invite_link_url: str) -> InlineKeyboardMarkup:
+    """通过卡片：URL 按钮跳转加入群组。"""
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🔗 点击加入群组", url=invite_link_url)],
         ]
     )

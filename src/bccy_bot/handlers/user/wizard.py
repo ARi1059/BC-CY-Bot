@@ -24,8 +24,9 @@ from bccy_bot.keyboards.factory import (
     existing_pending_keyboard,
     welcome_keyboard,
 )
+from bccy_bot.handlers.inviter import audit as inviter_audit
 from bccy_bot.repositories import application_repo, blacklist_repo
-from bccy_bot.services import wizard_service
+from bccy_bot.services import audit_service, wizard_service
 from bccy_bot.services.wizard_service import CurrentStepInfo, WizardError
 from bccy_bot.utils.session import session_scope
 
@@ -272,8 +273,14 @@ async def on_preview_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE)
         except WizardError as e:
             await update.effective_message.reply_text(f"⚠️ {e}")
             return
+
+        # 推送给审核者；失败不回滚 pending 状态（避免用户被卡住）
+        try:
+            await audit_service.notify_reviewers(session, context.bot, app)
+        except Exception:  # noqa: BLE001
+            log.exception("notify_reviewers_failed", application_id=app.id)
+
     await update.effective_message.reply_text(render_submission_complete())
-    # TODO(M2): 触发审核推送 audit_service.notify_reviewers(...)
 
 
 async def on_preview_redo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -297,8 +304,12 @@ async def on_preview_redo(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def on_material_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """处理 wizard 中用户发来的 photo / text 消息。"""
+    """处理私聊文本/图片：优先消费"等待拒绝原因"的 inviter 输入，再走 wizard。"""
     if update.effective_user is None or update.message is None:
+        return
+
+    # 审核者可能正在被等待"拒绝原因"文本输入 —— 先消费
+    if await inviter_audit.consume_reject_reason_text(update, context):
         return
 
     user = update.effective_user
