@@ -1,14 +1,18 @@
 import structlog
+from telegram import Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
+    ChatMemberHandler,
     CommandHandler,
+    ContextTypes,
     MessageHandler,
     filters,
 )
 
 from bccy_bot.config import settings
 from bccy_bot.db.session import make_engine, make_session_factory
+from bccy_bot.handlers.common import chat_member as chat_member_handler
 from bccy_bot.handlers.inviter import audit as inviter_audit
 from bccy_bot.handlers.user import wizard as wizard_handlers
 from bccy_bot.handlers.user.start import start_command
@@ -33,12 +37,14 @@ from bccy_bot.keyboards.callback_data import (
     USER_VIEW_STATUS,
 )
 from bccy_bot.repositories.admin_repo import ensure_initial_super_admin
+from bccy_bot.services import link_tracking_service
+from bccy_bot.utils.session import get_session_factory
 
 log = structlog.get_logger()
 
 
 async def _post_init(application: Application) -> None:
-    """启动时注入：初始超级管理员 + 数据库 session factory。"""
+    """启动时注入：初始超级管理员 + 数据库 session factory + 定时任务。"""
     engine = make_engine(settings.database_url)
     session_factory = make_session_factory(engine)
 
@@ -50,6 +56,30 @@ async def _post_init(application: Application) -> None:
 
     application.bot_data["engine"] = engine
     application.bot_data["session_factory"] = session_factory
+
+    # 注册定时任务：每小时扫描过期未用链接
+    if application.job_queue is not None:
+        application.job_queue.run_repeating(
+            _sweep_expired_links_job,
+            interval=3600,
+            first=300,  # 启动后 5 分钟首跑，留出时间让其他初始化完成
+            name="expired_link_sweep",
+        )
+        log.info("expired_link_sweep_scheduled", interval_sec=3600)
+
+
+async def _sweep_expired_links_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """JobQueue 回调：扫描标记过期链接。"""
+    factory = get_session_factory(context)
+    async with factory() as session:
+        try:
+            expired = await link_tracking_service.sweep_expired(session)
+            await session.commit()
+            if expired:
+                log.info("expired_link_sweep_done", marked=len(expired))
+        except Exception:  # noqa: BLE001
+            await session.rollback()
+            log.exception("expired_link_sweep_failed")
 
 
 async def _post_shutdown(application: Application) -> None:
@@ -132,4 +162,21 @@ def build_application() -> Application:
         )
     )
 
+    # === chat_member 更新（监听入群事件） ===
+    application.add_handler(
+        ChatMemberHandler(
+            chat_member_handler.on_chat_member_update,
+            ChatMemberHandler.CHAT_MEMBER,
+        )
+    )
+
     return application
+
+
+# 显式声明 polling 需要订阅的 update 类型；不订阅 chat_member 则 Telegram 不会推送
+ALLOWED_UPDATES = [
+    Update.MESSAGE,
+    Update.CALLBACK_QUERY,
+    Update.CHAT_MEMBER,
+    Update.MY_CHAT_MEMBER,
+]
