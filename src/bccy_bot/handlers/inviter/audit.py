@@ -1,11 +1,16 @@
 """审核者 callback handlers：通过 / 拒绝 / 重发材料。"""
 
 import structlog
+from sqlalchemy import select
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from bccy_bot.db.models.application import Application
-from bccy_bot.db.models.enums import APP_STATUS_PENDING, REVIEW_MODE_SELF
+from bccy_bot.db.models.enums import (
+    APP_STATUS_PENDING,
+    REVIEW_MODE_DELEGATED,
+    REVIEW_MODE_SELF,
+)
 from bccy_bot.keyboards.callback_data import (
     parse_approve,
     parse_reject,
@@ -14,7 +19,7 @@ from bccy_bot.keyboards.callback_data import (
     parse_view_materials,
 )
 from bccy_bot.keyboards.factory import reject_choice_keyboard
-from bccy_bot.repositories import inviter_repo
+from bccy_bot.repositories import admin_repo, inviter_repo
 from bccy_bot.services import audit_service
 from bccy_bot.services.audit_service import AuditError
 from bccy_bot.utils.session import session_scope
@@ -32,28 +37,48 @@ async def _ack(update: Update) -> None:
             pass
 
 
-async def _load_pending(session, app_id: int) -> Application | None:
-    app = await session.get(Application, app_id)
+async def _load_pending_with_lock(
+    session, app_id: int, reviewer_telegram_id: int
+) -> Application | None:
+    """
+    SELECT FOR UPDATE 加锁读取 pending 申请。
+
+    - PG：物理行锁，并发审核者会被阻塞至当前事务提交
+    - SQLite：FOR UPDATE 静默无效，但 SQLite 串行化写入 + status 复检 仍能防重
+    - 加锁后立即写 locked_by 字段便于调试观察
+    """
+    result = await session.execute(
+        select(Application).where(Application.id == app_id).with_for_update()
+    )
+    app = result.scalar_one_or_none()
     if app is None or app.status != APP_STATUS_PENDING:
         return None
+    if app.locked_by != reviewer_telegram_id:
+        app.locked_by = reviewer_telegram_id
+        await session.flush()
     return app
 
 
 async def _authorize(session, application: Application, reviewer_telegram_id: int) -> tuple[bool, str]:
     """
-    返回 (是否有权审核, 角色名'inviter'|'admin')。
+    返回 (是否有权审核, 角色名 'inviter' | 'admin')。
 
-    M2 仅支持自审型：reviewer 必须是 inviter.telegram_user_id。
-    M3 会扩展代审型（任一管理员可审核）。
+    - 自审型：reviewer 必须是 inviter.telegram_user_id
+    - 代审型：reviewer 必须是任一已登记的管理员
     """
     if application.inviter_id is None:
         return False, "inviter"
     inv = await inviter_repo.get_by_id(session, application.inviter_id)
     if inv is None:
         return False, "inviter"
-    if inv.review_mode == REVIEW_MODE_SELF and inv.telegram_user_id == reviewer_telegram_id:
-        return True, "inviter"
-    # TODO(M3): 代审型 + 管理员校验
+    if inv.review_mode == REVIEW_MODE_SELF:
+        if inv.telegram_user_id == reviewer_telegram_id:
+            return True, "inviter"
+        return False, "inviter"
+    if inv.review_mode == REVIEW_MODE_DELEGATED:
+        if await admin_repo.is_admin(session, reviewer_telegram_id):
+            return True, "admin"
+        return False, "admin"
     return False, "inviter"
 
 
@@ -70,7 +95,7 @@ async def on_approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
 
     async with session_scope(context) as session:
-        app = await _load_pending(session, app_id)
+        app = await _load_pending_with_lock(session, app_id, update.effective_user.id)
         if app is None:
             if update.effective_message is not None:
                 await update.effective_message.reply_text(
@@ -115,7 +140,7 @@ async def on_reject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     async with session_scope(context) as session:
-        app = await _load_pending(session, app_id)
+        app = await _load_pending_with_lock(session, app_id, update.effective_user.id)
         if app is None:
             if update.effective_message is not None:
                 await update.effective_message.reply_text("⚠️ 该申请已被处理或不存在。")
@@ -172,7 +197,7 @@ async def on_reject_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     async with session_scope(context) as session:
-        app = await _load_pending(session, app_id)
+        app = await _load_pending_with_lock(session, app_id, update.effective_user.id)
         if app is None:
             if update.effective_message is not None:
                 await update.effective_message.reply_text("⚠️ 该申请已被处理或不存在。")
@@ -221,7 +246,7 @@ async def consume_reject_reason_text(
         return True
 
     async with session_scope(context) as session:
-        app = await _load_pending(session, app_id)
+        app = await _load_pending_with_lock(session, app_id, update.effective_user.id)
         if app is None:
             awaiting.pop(update.effective_user.id, None)
             await update.message.reply_text("⚠️ 申请状态已变更，拒绝操作已废弃。")
