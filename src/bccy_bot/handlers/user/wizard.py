@@ -30,6 +30,7 @@ from bccy_bot.handlers.admin import (
     channels as adm_channels_handlers,
     groups as adm_groups_handlers,
     inviters as adm_inviters_handlers,
+    reimbursement as adm_rei_handlers,
     settings_ui as adm_settings_handlers,
 )
 from bccy_bot.handlers.inviter import audit as inviter_audit
@@ -327,6 +328,8 @@ async def on_material_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         adm_mgmt_handlers.consume_add_admin_text,
         adm_channels_handlers.consume_bind_channel_forward,
         adm_settings_handlers.consume_edit_ttl_text,
+        adm_rei_handlers.consume_text,
+        adm_rei_handlers.consume_eligibility_forward,
     )
     for c in consumers:
         if await c(update, context):

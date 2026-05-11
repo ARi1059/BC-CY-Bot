@@ -16,6 +16,22 @@ from bccy_bot.keyboards.admin_callbacks import (
     ADM_CONFIG,
     ADM_CONFIG_EDIT_TTL,
     ADM_DISMISS,
+    ADM_REI,
+    ADM_REI_ELIG,
+    ADM_REI_ELIG_ADD,
+    ADM_REI_ELIG_REMOVE_CONFIRM_PREFIX,
+    ADM_REI_ELIG_REMOVE_PREFIX,
+    ADM_REI_OVERRIDE_ADD,
+    ADM_REI_OVERRIDE_REMOVE_CONFIRM_PREFIX,
+    ADM_REI_OVERRIDE_REMOVE_PREFIX,
+    ADM_REI_OVERRIDES,
+    ADM_REI_RESET_REMAINING,
+    ADM_REI_SET_AMOUNT,
+    ADM_REI_SET_BUDGET,
+    ADM_REI_SET_COOLDOWN,
+    ADM_REI_SET_RESET_DAY,
+    ADM_REI_SETTINGS,
+    ADM_REI_TOGGLE,
     ADM_GRP_ADD,
     ADM_GRP_LIST,
     ADM_GRP_LIST_PREFIX,
@@ -90,10 +106,11 @@ def main_panel_keyboard(is_super: bool) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("🔑 回群密钥", callback_data=ADM_KEYS),
+            InlineKeyboardButton("💰 报销管理", callback_data=ADM_REI),
         ],
     ]
     if is_super:
-        rows[-1].append(InlineKeyboardButton("⚙️ 系统配置", callback_data=ADM_CONFIG))
+        rows.append([InlineKeyboardButton("⚙️ 系统配置", callback_data=ADM_CONFIG)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -346,3 +363,106 @@ def back_only_keyboard() -> InlineKeyboardMarkup:
 
 def dismiss_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[InlineKeyboardButton("✕ 关闭", callback_data=ADM_DISMISS)]])
+
+
+# === 报销系统（v2 §8.5） ===
+
+
+def reimbursement_main_keyboard(is_super: bool) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = [
+        [InlineKeyboardButton("📋 系统配置", callback_data=ADM_REI_SETTINGS)],
+        [InlineKeyboardButton("🎯 资格列表", callback_data=ADM_REI_ELIG)],
+    ]
+    if is_super:
+        rows.append([InlineKeyboardButton("🛡 用户冷却覆盖", callback_data=ADM_REI_OVERRIDES)])
+    rows.append(_back_row())
+    return InlineKeyboardMarkup(rows)
+
+
+def reimbursement_settings_keyboard(is_super: bool, enabled: bool) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if is_super:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    "⏸ 关闭总开关" if enabled else "▶️ 开启总开关",
+                    callback_data=ADM_REI_TOGGLE,
+                )
+            ]
+        )
+        rows.append(
+            [InlineKeyboardButton("✏️ 设置固定金额", callback_data=ADM_REI_SET_AMOUNT)]
+        )
+        rows.append(
+            [InlineKeyboardButton("✏️ 设置月预算", callback_data=ADM_REI_SET_BUDGET)]
+        )
+        rows.append(
+            [InlineKeyboardButton("♻️ 重置当前月余额至月预算", callback_data=ADM_REI_RESET_REMAINING)]
+        )
+        rows.append(
+            [InlineKeyboardButton("✏️ 设置冷却天数", callback_data=ADM_REI_SET_COOLDOWN)]
+        )
+        rows.append(
+            [InlineKeyboardButton("✏️ 设置预算重置日", callback_data=ADM_REI_SET_RESET_DAY)]
+        )
+    rows.append([InlineKeyboardButton("« 返回报销管理", callback_data=ADM_REI)])
+    return InlineKeyboardMarkup(rows)
+
+
+def eligibility_list_keyboard(
+    rows_data, is_super: bool, page: int = 0
+) -> InlineKeyboardMarkup:
+    start = page * ITEMS_PER_PAGE
+    chunk = rows_data[start : start + ITEMS_PER_PAGE]
+    rows: list[list[InlineKeyboardButton]] = []
+    for e in chunk:
+        type_icon = {"channel": "📋", "supergroup": "📌", "group": "📌"}.get(e.chat_type, "•")
+        label = f"{type_icon} {e.name}"
+        row = [InlineKeyboardButton(label, callback_data=ADM_REI_ELIG)]
+        if is_super:
+            row.append(
+                InlineKeyboardButton("🗑", callback_data=f"{ADM_REI_ELIG_REMOVE_PREFIX}{e.id}")
+            )
+        rows.append(row)
+    if is_super:
+        rows.append([InlineKeyboardButton("➕ 添加资格群/频道（转发消息）", callback_data=ADM_REI_ELIG_ADD)])
+    rows.append([InlineKeyboardButton("« 返回报销管理", callback_data=ADM_REI)])
+    return InlineKeyboardMarkup(rows)
+
+
+def eligibility_remove_confirm_keyboard(elig_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("✅ 确认删除", callback_data=f"{ADM_REI_ELIG_REMOVE_CONFIRM_PREFIX}{elig_id}")],
+            [InlineKeyboardButton("« 取消", callback_data=ADM_REI_ELIG)],
+        ]
+    )
+
+
+def overrides_list_keyboard(rows_data, page: int = 0) -> InlineKeyboardMarkup:
+    start = page * ITEMS_PER_PAGE
+    chunk = rows_data[start : start + ITEMS_PER_PAGE]
+    rows: list[list[InlineKeyboardButton]] = []
+    for o in chunk:
+        notes = (o.notes[:18] + "…") if o.notes and len(o.notes) > 18 else (o.notes or "")
+        label = f"🛡 {o.telegram_user_id} · {o.cooldown_days}天 · {notes}"
+        rows.append(
+            [
+                InlineKeyboardButton(label, callback_data=ADM_REI_OVERRIDES),
+                InlineKeyboardButton(
+                    "🗑", callback_data=f"{ADM_REI_OVERRIDE_REMOVE_PREFIX}{o.id}"
+                ),
+            ]
+        )
+    rows.append([InlineKeyboardButton("➕ 添加/更新覆盖", callback_data=ADM_REI_OVERRIDE_ADD)])
+    rows.append([InlineKeyboardButton("« 返回报销管理", callback_data=ADM_REI)])
+    return InlineKeyboardMarkup(rows)
+
+
+def override_remove_confirm_keyboard(override_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("✅ 确认删除", callback_data=f"{ADM_REI_OVERRIDE_REMOVE_CONFIRM_PREFIX}{override_id}")],
+            [InlineKeyboardButton("« 取消", callback_data=ADM_REI_OVERRIDES)],
+        ]
+    )

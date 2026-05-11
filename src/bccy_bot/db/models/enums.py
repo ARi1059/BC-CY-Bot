@@ -79,3 +79,27 @@ ARF_STATUSES = (ARF_SENT, ARF_FAILED, ARF_SKIPPED_NO_REPORT, ARF_SKIPPED_NO_CHAN
 SK_LOG_CHANNEL_ID = "log_channel_id"
 SK_ATTACK_REPORT_CHANNEL_ID = "attack_report_channel_id"
 SK_INVITE_LINK_TTL_HOURS = "invite_link_ttl_hours"
+
+# 报销系统（v2 §8.5）
+REI_STATUS_WIZARD = "wizard"
+REI_STATUS_PENDING = "pending"
+REI_STATUS_APPROVED = "approved"
+REI_STATUS_REJECTED = "rejected"
+REI_STATUS_CANCELLED = "cancelled"
+REI_STATUS_PAID = "paid"
+REI_STATUSES = (
+    REI_STATUS_WIZARD,
+    REI_STATUS_PENDING,
+    REI_STATUS_APPROVED,
+    REI_STATUS_REJECTED,
+    REI_STATUS_CANCELLED,
+    REI_STATUS_PAID,
+)
+
+# 报销系统 settings keys
+SK_REI_GLOBAL_ENABLED = "reimbursement_global_enabled"           # 'true' / 'false'
+SK_REI_FIXED_AMOUNT_CENTS = "reimbursement_fixed_amount_cents"   # int, 单次报销金额（分）
+SK_REI_MONTHLY_BUDGET_CENTS = "reimbursement_monthly_budget_cents"     # int, 月预算（分）
+SK_REI_MONTHLY_REMAINING_CENTS = "reimbursement_monthly_remaining_cents"  # int, 当前余额
+SK_REI_BUDGET_RESET_DAY = "reimbursement_budget_reset_day"       # int, 1~28，每月哪天 00:00 重置
+SK_REI_DEFAULT_COOLDOWN_DAYS = "reimbursement_default_cooldown_days"  # int, 默认 7
