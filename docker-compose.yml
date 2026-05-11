@@ -16,17 +16,19 @@ services:
 
   bot:
     build: .
+    image: bccy-bot:latest
     restart: always
     depends_on:
       postgres:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
-      BOT_TOKEN: ${BOT_TOKEN}
+      # 容器内连接：覆盖 .env 里给本地开发用的 sqlite/localhost URL
       DATABASE_URL: postgresql+asyncpg://bccy:${POSTGRES_PASSWORD:-bccy}@postgres:5432/bccy
-      INITIAL_SUPER_ADMIN_ID: ${INITIAL_SUPER_ADMIN_ID}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      TIMEZONE: ${TIMEZONE:-Asia/Shanghai}
+    # 启动时跑迁移再起 Bot；Bot 任何崩溃由 restart: always 兜底
     command: sh -c "alembic upgrade head && python -m bccy_bot"
 
 volumes:
   postgres_data:
+    driver: local
