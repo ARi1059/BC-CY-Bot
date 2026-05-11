@@ -56,12 +56,22 @@ class _ChatInviteLink:
     expire_date: object | None = None
 
 
+@dataclass
+class _Forwarded:
+    chat_id: int
+    from_chat_id: int
+    source_message_id: int
+    new_message_id: int
+
+
 class FakeBot:
     def __init__(self):
         self.sent_media: list[_SentMedia] = []
         self.sent_texts: list[_SentText] = []
         self.edited: list[_EditedText] = []
         self.created_links: list[dict] = []
+        self.forwarded: list[_Forwarded] = []
+        self.forward_should_fail = False
         self._next_msg_id = 1000
 
     def _next(self) -> int:
@@ -89,6 +99,21 @@ class FakeBot:
             dict(chat_id=chat_id, member_limit=member_limit, expire_date=expire_date, name=name)
         )
         return _ChatInviteLink(invite_link=f"https://t.me/+fake_{name}")
+
+    async def forward_message(self, chat_id, from_chat_id, message_id, **kwargs):
+        if self.forward_should_fail:
+            from telegram.error import BadRequest
+            raise BadRequest("simulated forward failure")
+        new_id = self._next()
+        self.forwarded.append(
+            _Forwarded(
+                chat_id=chat_id,
+                from_chat_id=from_chat_id,
+                source_message_id=message_id,
+                new_message_id=new_id,
+            )
+        )
+        return _Message(message_id=new_id)
 
 
 # ---------- Fixtures ----------
