@@ -22,3 +22,7 @@ class InviteLink(Base):
     used_by_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_anomaly: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # 链接过期定时扫描时，已发出告警的标记 —— 避免重复推日志频道
+    expired_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

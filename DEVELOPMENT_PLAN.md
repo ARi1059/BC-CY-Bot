@@ -13,7 +13,7 @@
 | M1 | 申请人引导式流程（禁媒体组 / 逐项 / 预览） | 2.5d | ✅ 已完成 | 2026-05-12 |
 | M2 | 邀请人审核（双消息 / 通过-拒绝 / 一次性链接） | 2.5d | ✅ 已完成 | 2026-05-12 |
 | M3 | 代审型路由（多管理员行锁） | 1d | ✅ 已完成 | 2026-05-12 |
-| M4 | 链接使用追踪 + chat_member 监听 | 1d | ⬜ 未开始 | – |
+| M4 | 链接使用追踪 + chat_member 监听 | 1d | ✅ 已完成 | 2026-05-12 |
 | M5 | 管理员面板（含主/副分层 + 系统配置） | 2d | ⬜ 未开始 | – |
 | M6 | 日志频道（5 类事件卡片） | 1d | ⬜ 未开始 | – |
 | M7 | 出击报告频道（仅转发报告） | 1d | ⬜ 未开始 | – |
@@ -217,19 +217,24 @@ BC-CY-Bot/
 
 ---
 
-### M4 链接使用追踪 + chat_member 监听（1 天）
+### M4 链接使用追踪 + chat_member 监听（1 天） ✅
 
 **目标**：用户实际入群时记录到 invite_links，异常入群（非申请人）触发告警。
 
-- [ ] `handlers/common/chat_member.py`：监听 `chat_member` 更新
-- [ ] 匹配：通过 `invite_link.name`（`App-{id}`）回查 application
-- [ ] 写入 invite_links.is_used / used_by_telegram_id / used_at
-- [ ] **异常检测**：实际入群 ID ≠ application.applicant_telegram_id → `is_anomaly=true`
-- [ ] 触发 §M6 的「🚪 链接已使用」/「⚠️ 异常告警」日志频道事件（M6 完成前先打 print 日志占位）
-- [ ] 链接过期未用：定时任务（每小时）扫描，标记 expired
-- [ ] 测试：模拟正常入群 / 异常入群两条路径
+- [x] `handlers/common/chat_member.py`：监听 chat_member 更新（only "left/banned → 在群中"过渡）
+- [x] 匹配：通过 `invite_link.name`（`App-{id}` 前缀过滤）反查 InviteLink
+- [x] `invite_link_repo.find_active_by_name`：抓取尚未 used 的链接
+- [x] 写入 is_used / used_by_telegram_id / used_at / is_anomaly
+- [x] **异常检测**：实际入群 ID ≠ application.applicant_telegram_id → is_anomaly=true，structlog WARNING
+- [x] 触发 M6 日志频道事件留 TODO（structlog 占位）
+- [x] **链接过期未用**：
+  - [x] 新增 invite_links.expired_notified_at 字段 + migration
+  - [x] `link_tracking_service.sweep_expired` + invite_link_repo.list_newly_expired
+  - [x] JobQueue：每小时跑一次（首次延迟 5 分钟）
+- [x] `bot.py` ALLOWED_UPDATES 显式包含 CHAT_MEMBER；__main__ 传入 run_polling
+- [x] 测试：7 个新用例（正常 / 异常 / 未知 link name / 已使用 / 关联申请被删 / sweep 标记 / sweep 幂等）
 
-**验收**：用户实际入群后，invite_links 表对应行 is_used=true；异常入群标志正确。
+**验收**：✅ 52/52 单元测试通过（M4 新增 7）；ChatMemberHandler 注册（22 handlers）；ALLOWED_UPDATES 含 CHAT_MEMBER；JobQueue 注册成功。
 
 ---
 
@@ -427,12 +432,12 @@ mypy = "*"
 
 ## 10. 当前下一步
 
-**☞ M3 ✅ 完成。等待用户确认即可进入 M4（链接使用追踪 + chat_member 监听）**
+**☞ M4 ✅ 完成。等待用户确认即可进入 M5（管理员面板）**
 
-M4 启动时执行：
-1. 创建特性分支 `feature/M4-link-tracking`
-2. 按 §4 M4 任务清单逐项打勾推进
-3. 完成后合并到 main，进入 M5
+M5 启动时执行：
+1. 创建特性分支 `feature/M5-admin-panel`
+2. 按 §4 M5 任务清单逐项打勾推进（10 个管理子模块）
+3. 完成后合并到 main，进入 M6
 
 ---
 
@@ -441,6 +446,13 @@ M4 启动时执行：
 > 开发过程中的偏离决策、阻塞、关键判断在此追加。每条带日期。
 
 - `2026-05-12` 文档创建，与 REQUIREMENTS v1.0 对齐，未进入开发。
+- `2026-05-12` **M4 完成**。关键决策与发现：
+  - **ALLOWED_UPDATES 必须显式**：默认 PTB 只订阅 message/callback_query；不加 CHAT_MEMBER 则 Telegram 不会推送入群事件，Bot 永远收不到。集中在 bot.py 导出常量，__main__.run_polling 显式传入。
+  - **加入判定的严格化**：仅当 `old_status in {left, banned}` 且 `new_status in {member, administrator, owner, restricted}` 才视为"首次加入"。`old=restricted` 不算（避免误把解除限制当作加入）。
+  - **过期标记字段**：新增 invite_links.expired_notified_at（nullable datetime），用 "IS NULL" 作为"待告警"语义。比布尔 is_expired 更紧凑，并保留首次告警时间戳。
+  - **关联申请已删的容错**：理论上 application 不会被删，但代码对 app=None 做 fallback 处理（is_anomaly=false 保守），避免崩溃；日志仍记录 link 被用。
+  - **JobQueue 首次延迟 5 分钟**：避免与启动期间其他初始化竞争。生产 PG 即使重启也不会丢失链接 → sweep 自然幂等。
+  - **测试 seed 唯一约束陷阱**：groups.telegram_chat_id 是 unique，多条 seed 重用同一值会触发 IntegrityError；改用计数器生成不同 ID。
 - `2026-05-12` **M3 完成**。关键决策与发现：
   - **SQLite FOR UPDATE 的"虚假"性**：with_for_update() 在 SQLite 上是 no-op；测试中保护并发的真正机制是 SQLite 写串行化 + `status == 'pending'` 复检。生产 PG 走的是真行锁。测试中两个 session 串行模拟"先到先得"，符合实际语义。
   - **acting vs others 差异化文案**：靠 `am.reviewer_telegram_id == acting_reviewer_telegram_id` 一行判断完成；自审型只有 1 行所以总是 acting，行为退化为 M2 原样。
@@ -470,5 +482,5 @@ M4 启动时执行：
 
 ---
 
-**文档版本：v0.5（M3 完成）**
+**文档版本：v0.6（M4 完成）**
 **最后更新：2026-05-12**
