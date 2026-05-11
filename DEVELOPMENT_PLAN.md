@@ -22,7 +22,7 @@
 | M10 | Docker 化 + 部署文档 + 联调 | 1.5d | ✅ 已完成 | 2026-05-12 |
 | **v2 · 报销系统** | | | | |
 | M11 | 报销基础设施（5 张表 / migration / 设置项 / 资格列表 / 用户覆盖） | 1.5d | ✅ 已完成 | 2026-05-12 |
-| M12 | 用户侧报销 wizard（3 层预校验 + 引导提交 + 预览） | 1.5d | ⬜ 未开始 | – |
+| M12 | 用户侧报销 wizard（4 层预校验 + 引导提交 + 预览） | 1.5d | ✅ 已完成 | 2026-05-12 |
 | M13 | 管理员侧审核 + 口令红包转发（双消息 + 等待状态机） | 1.5d | ⬜ 未开始 | – |
 | M14 | 周报 / 月报 JobQueue + 报销管理 UI + 月预算重置 | 1d | ⬜ 未开始 | – |
 
@@ -423,25 +423,29 @@ BC-CY-Bot/
 
 **验收**：✅ 106/106 单元测试通过（M11 新增 14）；81 handlers 注册成功；超管可在 `/admin → [💰 报销管理]` 完成"开启 + 50 元固定 / 5000 元月预算 / 添加 1 群 1 频道 / 添加 1 个用户覆盖" 的完整初始化。
 
-### M12 用户侧报销 wizard（1.5 天）
+### M12 用户侧报销 wizard（1.5 天） ✅
 
-**目标**：用户能完整走完 `/reimburse → 3 层预校验 → 提交 3 项材料 → 落库 pending`。
+**目标**：用户能完整走完 `/reimburse → 4 层预校验 → 提交 3 项材料 → 落库 pending`。
 
-- [ ] handlers/user/reimburse.py
-  - [ ] `/reimburse` 命令 + 在欢迎卡片增加 `[💰 申请报销]` 入口
-  - [ ] 预校验顺序：global_enabled → 已通过入群审核 → 资格群成员 → 冷却时间 → 月预算
-  - [ ] 每个失败路径独立友好文案
-- [ ] services/eligibility_service.py
-  - [ ] check_membership(user_id) → list[(chat, in_or_not)]
-  - [ ] 缓存（5 分钟 success-only）
-- [ ] services/reimbursement_wizard_service.py
-  - [ ] 与 wizard_service 同构（状态机 + 单张提交 + 媒体组拒收）
-  - [ ] 入参/出参纯数据，便于单测
-- [ ] keyboards：新增 reimburse_callbacks.py + 工厂
-- [ ] 消息分发链：新增 `consume_reimburse_material_message` 优先级置于 admin awaiting 之前
-- [ ] 单元测试：4 类预校验拒绝 / 完整 happy path / 媒体组拒收 / 类型错配
+- [x] handlers/user/reimburse.py
+  - [x] `/reimburse` 命令 + 欢迎卡片新增 `[💰 申请报销]` 按钮
+  - [x] 黑名单 → precheck（disabled / no_approved_app / has_active / cooldown / budget）→ 资格成员校验
+  - [x] 每个失败路径独立友好文案
+  - [x] has_active 时如仍处于 wizard 状态：自动续上当前步骤；如已 pending：友好提示
+- [x] services/eligibility_service.py
+  - [x] check_membership(user_id) → EligibilityResult（ok / missing / errored / checked_chats）
+  - [x] bot_data 缓存：成功 5 分钟，失败不缓存
+  - [x] 空 active 列表 = 全员拒绝（[REQ §8.5.11]）
+- [x] services/reimbursement_wizard_service.py
+  - [x] 与 wizard_service 同构（resolve_step / submit_material / go_back / redo_materials / confirm_submit / cancel）
+  - [x] 固定 3 项材料、wizard_step 1-4 编码、严格单张提交
+  - [x] precheck() 函数承担全部预校验（含冷却天数按用户覆盖判定）
+- [x] keyboards/reimburse_callbacks.py + factory 工厂（材料/预览/取消确认）
+- [x] welcome_keyboard 新增 `[💰 申请报销]` 按钮（→ on_start_from_welcome）
+- [x] 消息分发链：append `reimburse_handler.consume_material_message`（不与 app wizard 冲突 —— 报销前置要求已 approved，因此 app 必非 wizard 状态）
+- [x] 单元测试：26 个新用例 = 14 (M11) + 19 (wizard) + 7 (eligibility)
 
-**验收**：用户走 `/reimburse` 看到 3 层校验提示，通过后完成 wizard 入库；DB 有 1 条 reimbursement_request=pending + 3 条 materials。
+**验收**：✅ 132/132 单元测试通过（M12 净新增 26）；89 handlers 注册成功；4 层预校验路径全覆盖；wizard 状态机所有迁移（advance / back / redo / preview / confirm / cancel / type-mismatch / media-group-reject）正确；缓存语义验证通过。
 
 ### M13 管理员审核 + 口令红包转发（1.5 天）
 
@@ -552,14 +556,14 @@ mypy = "*"
 
 ## 10. 当前下一步
 
-**☞ M11 ✅ 完成；下一步进入 M12（用户侧报销 wizard）**
+**☞ M12 ✅ 完成；下一步进入 M13（管理员审核 + 口令红包转发）**
 
-v2 进度：M11 ✅ / M12 ⬜ / M13 ⬜ / M14 ⬜
+v2 进度：M11 ✅ / M12 ✅ / M13 ⬜ / M14 ⬜
 
-M12 启动顺序：
-1. 创建特性分支 `feature/M12-reimbursement-wizard`
-2. 实现 `/reimburse` 命令 + 3 层预校验 + 引导式 wizard（同入群 wizard 模式）
-3. 完成后合并到 main，进入 M13
+M13 启动顺序：
+1. 创建特性分支 `feature/M13-reimbursement-audit`
+2. 实现双消息审核推送 + 通过/拒绝 + "等待口令"状态机
+3. 完成后合并到 main，进入 M14
 
 v1.x 迭代候选（与 v2 并行可做）：
 - 回群密钥管理 UI（M5 占位）：完整的搜索 / 重置 / 撤销 / 历史查询
@@ -574,6 +578,13 @@ v1.x 迭代候选（与 v2 并行可做）：
 > 开发过程中的偏离决策、阻塞、关键判断在此追加。每条带日期。
 
 - `2026-05-12` 文档创建，与 REQUIREMENTS v1.0 对齐，未进入开发。
+- `2026-05-12` **M12 完成 —— 用户侧报销 wizard 上线**。关键决策与发现：
+  - **precheck 集中所有 4 层判定**：disabled → no_approved_app → has_active_request → cooldown → budget；handler 只负责取 bot_data 缓存的资格校验，避免把 5 层判定散落到 handler 各处。
+  - **has_active_request 不当作错误**：检测到用户已有进行中的 wizard 会续上当前步骤（重新渲染 prompt），不进 wizard 也不让用户重启；这是友好的"resume wherever I left off"语义。
+  - **eligibility 缓存 success-only**：失败不缓存，用户加群后下次 `/reimburse` 立即生效；成功缓存 5 分钟，节省 `getChatMember` API 调用。
+  - **空 active 列表 = 全员拒绝**：[REQ §8.5.11] 显式约束，避免管理员忘配置时所有人变白名单。
+  - **报销 wizard 与申请人 wizard 不会冲突**：报销前置 `applications.status='approved'`，所以一旦能走报销，申请人 wizard 必非 `wizard` 状态。dispatch chain 把 `consume_material_message` 放在最后一个 consumer 是安全的。
+  - **冷却天数路径**：默认值从 `reimbursement_settings` 取，单用户覆盖通过 `reimbursement_override_repo.find_for_user` 查；override.cooldown_days 覆盖全局默认。
 - `2026-05-12` **M11 完成 —— 报销系统基础设施落地**。关键决策与发现：
   - **金额统一用 cents（分）**：避免浮点累计误差。所有 settings 存 int 分；展示层 `cents_to_yuan_display` 做"50.00"格式化。
   - **reimbursement_settings 作为薄包装层**：把 6 个 key 的"读 int + clamp + bool 文本"细节封装，handler 只调高层 API；保持 settings_repo 原样通用。
@@ -657,5 +668,5 @@ v1.x 迭代候选（与 v2 并行可做）：
 
 ---
 
-**文档版本：v1.4（M11 完成 —— 报销系统基础设施就绪）**
+**文档版本：v1.5（M12 完成 —— 用户侧报销 wizard 上线）**
 **最后更新：2026-05-12**

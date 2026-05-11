@@ -28,6 +28,7 @@ from bccy_bot.handlers.common import chat_member as chat_member_handler
 from bccy_bot.handlers.inviter import audit as inviter_audit
 from bccy_bot.handlers.inviter import panel as inviter_panel
 from bccy_bot.handlers.user import recovery as user_recovery
+from bccy_bot.handlers.user import reimburse as user_reimburse
 from bccy_bot.handlers.user import wizard as wizard_handlers
 from bccy_bot.handlers.user.start import start_command
 from bccy_bot.keyboards.inviter_callbacks import (
@@ -111,8 +112,17 @@ from bccy_bot.keyboards.callback_data import (
     USER_PREVIEW_CONFIRM,
     USER_PREVIEW_REDO,
     USER_START_APPLY,
+    USER_START_REIMBURSE,
     USER_USE_RECOVERY_KEY,
     USER_VIEW_STATUS,
+)
+from bccy_bot.keyboards.reimburse_callbacks import (
+    REI_USER_BACK,
+    REI_USER_CANCEL,
+    REI_USER_CONFIRM_CANCEL,
+    REI_USER_DISMISS,
+    REI_USER_PREVIEW_CONFIRM,
+    REI_USER_PREVIEW_REDO,
 )
 from bccy_bot.repositories.admin_repo import ensure_initial_super_admin
 from bccy_bot.services import link_tracking_service
@@ -181,12 +191,40 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("help", wizard_handlers.on_help))
     application.add_handler(CommandHandler("admin", adm_panel.admin_command))
     application.add_handler(CommandHandler("panel", inviter_panel.panel_command))
+    application.add_handler(CommandHandler("reimburse", user_reimburse.reimburse_command))
 
     # === Welcome card callbacks ===
     application.add_handler(CallbackQueryHandler(wizard_handlers.on_start_apply, pattern=f"^{USER_START_APPLY}$"))
     application.add_handler(CallbackQueryHandler(wizard_handlers.on_help, pattern=f"^{USER_HELP}$"))
     application.add_handler(
         CallbackQueryHandler(user_recovery.on_use_recovery_key, pattern=f"^{USER_USE_RECOVERY_KEY}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(user_reimburse.on_start_from_welcome, pattern=f"^{USER_START_REIMBURSE}$")
+    )
+
+    # === Reimbursement user wizard callbacks ===
+    application.add_handler(
+        CallbackQueryHandler(user_reimburse.on_back, pattern=f"^{REI_USER_BACK}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(user_reimburse.on_cancel, pattern=f"^{REI_USER_CANCEL}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            user_reimburse.on_confirm_cancel, pattern=f"^{REI_USER_CONFIRM_CANCEL}$"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(user_reimburse.on_dismiss, pattern=f"^{REI_USER_DISMISS}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            user_reimburse.on_preview_confirm, pattern=f"^{REI_USER_PREVIEW_CONFIRM}$"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(user_reimburse.on_preview_redo, pattern=f"^{REI_USER_PREVIEW_REDO}$")
     )
 
     # === Existing-pending card ===

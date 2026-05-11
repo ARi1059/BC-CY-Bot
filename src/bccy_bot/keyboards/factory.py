@@ -20,6 +20,7 @@ from bccy_bot.keyboards.callback_data import (
     USER_PREVIEW_CONFIRM,
     USER_PREVIEW_REDO,
     USER_START_APPLY,
+    USER_START_REIMBURSE,
     USER_USE_RECOVERY_KEY,
     USER_VIEW_STATUS,
 )
@@ -28,11 +29,12 @@ INVITERS_PER_PAGE = 6
 
 
 def welcome_keyboard() -> InlineKeyboardMarkup:
-    """/start 欢迎卡片：开始申请 / 我有回群密钥 / 帮助。"""
+    """/start 欢迎卡片：开始申请 / 我有回群密钥 / 申请报销 / 帮助。"""
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("🚀 开始申请入群", callback_data=USER_START_APPLY)],
             [InlineKeyboardButton("🔑 我有回群密钥", callback_data=USER_USE_RECOVERY_KEY)],
+            [InlineKeyboardButton("💰 申请报销", callback_data=USER_START_REIMBURSE)],
             [InlineKeyboardButton("❓ 帮助", callback_data=USER_HELP)],
         ]
     )
