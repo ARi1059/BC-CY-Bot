@@ -21,6 +21,7 @@ SCOPE_ADMIN = "admin"
 # 欢迎卡片
 USER_START_APPLY = f"{SCOPE_USER}:start_apply"
 USER_USE_RECOVERY_KEY = f"{SCOPE_USER}:use_recovery_key"
+USER_START_REIMBURSE = f"{SCOPE_USER}:reimburse"  # → 跳转到 rei:start 流程
 USER_HELP = f"{SCOPE_USER}:help"
 
 # Wizard 内导航

@@ -35,6 +35,7 @@ from bccy_bot.handlers.admin import (
 )
 from bccy_bot.handlers.inviter import audit as inviter_audit
 from bccy_bot.handlers.user import recovery as recovery_handler
+from bccy_bot.handlers.user import reimburse as reimburse_handler
 from bccy_bot.repositories import application_repo, blacklist_repo
 from bccy_bot.services import audit_service, wizard_service
 from bccy_bot.services.wizard_service import CurrentStepInfo, WizardError
@@ -330,6 +331,8 @@ async def on_material_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         adm_settings_handlers.consume_edit_ttl_text,
         adm_rei_handlers.consume_text,
         adm_rei_handlers.consume_eligibility_forward,
+        # 报销 wizard 材料：要求用户已有 status='wizard' 的报销请求；不与申请人 wizard 冲突
+        reimburse_handler.consume_material_message,
     )
     for c in consumers:
         if await c(update, context):
