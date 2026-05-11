@@ -41,7 +41,7 @@ from bccy_bot.keyboards.factory import (
     reject_choice_keyboard,
 )
 from bccy_bot.repositories import admin_repo, application_repo, inviter_repo
-from bccy_bot.services import invite_link_service, recovery_key_service
+from bccy_bot.services import invite_link_service, log_channel_service, recovery_key_service
 from bccy_bot.utils.retry import telegram_retry
 
 log = structlog.get_logger()
@@ -147,6 +147,12 @@ async def notify_reviewers(session: AsyncSession, bot: Bot, application: Applica
     materials = await application_repo.list_materials(session, application.id)
     photos, report_text = _split_materials(materials)
     summary = _build_summary_text(application, inviter)
+
+    # 触发日志频道 "📥 新申请" 事件（[REQ §3.6.2]）—— 不阻塞主流程
+    try:
+        await log_channel_service.push_new_application(session, bot, application)
+    except Exception:  # noqa: BLE001
+        log.exception("log_channel_new_application_failed", application_id=application.id)
 
     if inviter.review_mode == REVIEW_MODE_SELF:
         if inviter.telegram_user_id is None:
@@ -332,6 +338,20 @@ async def approve_application(
         is_approved=True,
     )
 
+    # 6. 日志频道：✅ 审核通过
+    try:
+        await log_channel_service.push_approval(
+            session,
+            bot,
+            application,
+            reviewer_telegram_id=reviewer_telegram_id,
+            reviewer_role=reviewer_role,
+            reviewer_display=reviewer_display,
+            invite_link_url=db_link.invite_link,
+        )
+    except Exception:  # noqa: BLE001
+        log.exception("log_channel_approval_failed", application_id=application.id)
+
     log.info(
         "application_approved",
         application_id=application.id,
@@ -429,6 +449,20 @@ async def reject_application(
         is_approved=False,
         reject_reason=reason,
     )
+
+    # 日志频道：❌ 审核拒绝
+    try:
+        await log_channel_service.push_rejection(
+            session,
+            bot,
+            application,
+            reviewer_telegram_id=reviewer_telegram_id,
+            reviewer_role=reviewer_role,
+            reviewer_display=reviewer_display,
+            reason=reason,
+        )
+    except Exception:  # noqa: BLE001
+        log.exception("log_channel_rejection_failed", application_id=application.id)
 
     log.info(
         "application_rejected",

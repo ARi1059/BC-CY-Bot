@@ -73,7 +73,7 @@ class FakeBot:
         self.sent_media.append(_SentMedia(chat_id=chat_id, media=list(media), message_ids=msg_ids))
         return [_Message(message_id=mid) for mid in msg_ids]
 
-    async def send_message(self, chat_id, text, reply_markup=None):
+    async def send_message(self, chat_id, text, reply_markup=None, **kwargs):
         msg_id = self._next()
         self.sent_texts.append(_SentText(chat_id=chat_id, text=text, reply_markup=reply_markup, message_id=msg_id))
         return _Message(message_id=msg_id)

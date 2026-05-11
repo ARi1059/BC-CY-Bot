@@ -15,10 +15,12 @@ from datetime import datetime, timezone
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
+from telegram import Bot
 
 from bccy_bot.db.models.application import Application
 from bccy_bot.db.models.invite_link import InviteLink
 from bccy_bot.repositories import invite_link_repo
+from bccy_bot.services import log_channel_service
 
 log = structlog.get_logger()
 
@@ -29,6 +31,8 @@ async def on_member_joined(
     invite_link_name: str,
     joined_user_id: int,
     chat_telegram_id: int | None = None,
+    bot: Bot | None = None,
+    joined_username: str | None = None,
 ) -> InviteLink | None:
     """
     chat_member 事件分发入口。
@@ -83,14 +87,28 @@ async def on_member_joined(
             joined_user_id=joined_user_id,
         )
 
-    # TODO(M6): push to log channel: 🚪 链接已使用 / ⚠️ 异常告警
+    # 日志频道推送（[REQ §3.6.2]）：失败不阻塞主流程
+    if bot is not None:
+        try:
+            if is_anomaly:
+                await log_channel_service.push_anomaly(
+                    session, bot, app, link,
+                    joined_user_id=joined_user_id, joined_username=joined_username,
+                )
+            else:
+                await log_channel_service.push_link_used(
+                    session, bot, app, link,
+                    joined_user_id=joined_user_id, joined_username=joined_username,
+                )
+        except Exception:  # noqa: BLE001
+            log.exception("log_channel_link_used_failed", link_id=link.id)
 
     return link
 
 
-async def sweep_expired(session: AsyncSession) -> list[InviteLink]:
+async def sweep_expired(session: AsyncSession, bot: Bot | None = None) -> list[InviteLink]:
     """
-    定时任务：标记 24h 未用的过期链接 + 推送日志频道（M6 接入前仅 structlog 占位）。
+    定时任务：标记 24h 未用的过期链接 + 推送日志频道告警。
 
     返回本轮新标记为 expired 的链接列表。
     """
@@ -108,6 +126,10 @@ async def sweep_expired(session: AsyncSession) -> list[InviteLink]:
             application_id=link.application_id,
             expire_date=link.expire_date.isoformat() if link.expire_date else None,
         )
-        # TODO(M6): push to log channel: ⚠️ 链接过期未用
+        if bot is not None:
+            try:
+                await log_channel_service.push_link_expired(session, bot, link)
+            except Exception:  # noqa: BLE001
+                log.exception("log_channel_expired_failed", link_id=link.id)
     await session.flush()
     return expired
