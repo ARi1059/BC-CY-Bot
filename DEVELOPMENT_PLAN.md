@@ -20,8 +20,13 @@
 | M8 | 回群密钥（含原账号清理） | 2d | ✅ 已完成 | 2026-05-12 |
 | M9 | 邀请人面板 `/panel` + 统计报表 | 1d | ✅ 已完成 | 2026-05-12 |
 | M10 | Docker 化 + 部署文档 + 联调 | 1.5d | ✅ 已完成 | 2026-05-12 |
+| **v2 · 报销系统** | | | | |
+| M11 | 报销基础设施（5 张表 / migration / 设置项 / 资格列表 / 用户覆盖） | 1.5d | ⬜ 未开始 | – |
+| M12 | 用户侧报销 wizard（3 层预校验 + 引导提交 + 预览） | 1.5d | ⬜ 未开始 | – |
+| M13 | 管理员侧审核 + 口令红包转发（双消息 + 等待状态机） | 1.5d | ⬜ 未开始 | – |
+| M14 | 周报 / 月报 JobQueue + 报销管理 UI + 月预算重置 | 1d | ⬜ 未开始 | – |
 
-**总计 17 工作日**
+**v1 总计 17 工作日；v2 报销系统 5.5 工作日**
 
 状态图例：⬜ 未开始 / 🟡 进行中 / ✅ 已完成 / ⚠️ 阻塞
 
@@ -391,6 +396,92 @@ BC-CY-Bot/
 
 ---
 
+## 4b. v2 报销系统里程碑
+
+> 详细规格见 [REQUIREMENTS §8.5](REQUIREMENTS.md)。沿用 v1 的"严格状态机 + 服务层零 Telegram 依赖 + 单元测试"模式。
+
+### M11 报销基础设施（1.5 天）
+
+**目标**：所有数据层 + 配置项 + 资格列表管理就绪，无业务流程。
+
+- [ ] 5 张新表 + 1 个 alembic migration
+  - [ ] reimbursement_requests
+  - [ ] reimbursement_materials（含 original_message_id）
+  - [ ] reimbursement_audit_messages
+  - [ ] eligibility_chats
+  - [ ] reimbursement_user_overrides
+- [ ] enums.py 新增：报销状态码、材料类型与 v1 共用、settings keys、cleanup 字段不再需要（属密钥）
+- [ ] settings 表新增 6 个 key，默认值：global_enabled=false / fixed_amount=0 / monthly_budget=0 / remaining=0 / reset_day=1 / cooldown_days=7
+- [ ] repositories 新增：reimbursement_repo / eligibility_chat_repo / reimbursement_settings 复用 settings_repo
+- [ ] handlers/admin 中新增 `[💰 报销管理]` 入口，先做骨架 + 子菜单：
+  - [ ] 系统配置（开关 / 金额 / 月预算 / 冷却天数 / 重置日）
+  - [ ] 资格列表（添加 = 转发消息识别）
+  - [ ] 用户冷却覆盖
+- [ ] 单元测试：仓库 CRUD + 资格列表添加 + 设置读写
+
+**验收**：超管能在 `/admin → [💰 报销管理]` 完成"开启系统 + 设置 50 元/月 5000 元 + 添加 1 群 1 频道"的初始化。
+
+### M12 用户侧报销 wizard（1.5 天）
+
+**目标**：用户能完整走完 `/reimburse → 3 层预校验 → 提交 3 项材料 → 落库 pending`。
+
+- [ ] handlers/user/reimburse.py
+  - [ ] `/reimburse` 命令 + 在欢迎卡片增加 `[💰 申请报销]` 入口
+  - [ ] 预校验顺序：global_enabled → 已通过入群审核 → 资格群成员 → 冷却时间 → 月预算
+  - [ ] 每个失败路径独立友好文案
+- [ ] services/eligibility_service.py
+  - [ ] check_membership(user_id) → list[(chat, in_or_not)]
+  - [ ] 缓存（5 分钟 success-only）
+- [ ] services/reimbursement_wizard_service.py
+  - [ ] 与 wizard_service 同构（状态机 + 单张提交 + 媒体组拒收）
+  - [ ] 入参/出参纯数据，便于单测
+- [ ] keyboards：新增 reimburse_callbacks.py + 工厂
+- [ ] 消息分发链：新增 `consume_reimburse_material_message` 优先级置于 admin awaiting 之前
+- [ ] 单元测试：4 类预校验拒绝 / 完整 happy path / 媒体组拒收 / 类型错配
+
+**验收**：用户走 `/reimburse` 看到 3 层校验提示，通过后完成 wizard 入库；DB 有 1 条 reimbursement_request=pending + 3 条 materials。
+
+### M13 管理员审核 + 口令红包转发（1.5 天）
+
+**目标**：审核双消息推送 + 通过/拒绝 + "等待口令"状态机 + 转发付款。
+
+- [ ] services/reimbursement_audit_service.py
+  - [ ] notify_admins —— 广播给所有 admin（复用代审型模式）
+  - [ ] 双消息（媒体组 + caption 报告 / 申请人信息 + 金额 + 历史次数 + 审核按钮）
+  - [ ] approve_reimbursement：行锁 + 预算复检 + 扣减 + status='approved' + 私聊审核者要求输入口令
+  - [ ] confirm_payment：消费"等待口令"文本 → 保存口令 + paid_at + paid_by + 转发给申请人 + status='paid'
+  - [ ] reject_reimbursement：与 §3.2.2 同
+- [ ] handlers/admin/reimbursement_audit.py：6 个 callback（通过/拒绝/拒绝原因/跳过/重发/取消等待）
+- [ ] 消息分发链：新增 `consume_payment_code_text` 优先级最高（位于 reject_reason 之前）
+- [ ] 5 分钟超时：等待状态在 bot_data，过期自动清；状态保持 approved，管理面板可补发
+- [ ] 日志频道：💰 报销已发放 / ❌ 报销拒绝
+- [ ] 单元测试：FakeBot 完整通过流 / 拒绝流 / 预算不足拒绝 / 多管理员并发
+
+**验收**：申请人收到口令文本；审核消息编辑为终态；DB 中 status=paid + alipay_code_text 已存；月预算扣减正确。
+
+### M14 周报/月报 + 报销管理 UI + 月预算重置（1 天）
+
+**目标**：自动化报表 + 完整的管理 UI + 预算定期重置。
+
+- [ ] services/reimbursement_reports_service.py
+  - [ ] generate_weekly_report(week_start, week_end) → str
+  - [ ] generate_monthly_report(month) → str
+  - [ ] 内容：申请数 / 各状态 / 总发放 / 月预算余 / 报销次数 Top
+- [ ] JobQueue：
+  - [ ] 每天 00:00 检查是否是预算重置日 → 重置 remaining = monthly_budget
+  - [ ] 周一 00:05 跑周报，私聊所有超管
+  - [ ] 月 1 日 00:10 跑月报
+- [ ] 管理面板补全：
+  - [ ] 待审核列表（pending）
+  - [ ] 待付款列表（approved 未 paid）+ "补发口令" 按钮
+  - [ ] 历史记录分页（最近 30 条）
+- [ ] 文档：TESTING.md 增加报销端到端清单（10+ 步）
+- [ ] 单元测试：报表生成 / 预算重置 / 用户冷却覆盖生效
+
+**验收**：模拟周报数据后跑 generate_weekly_report 返回正确文本；模拟当日为 reset_day 后跑 job → remaining 回到 monthly_budget；管理面板能看到 pending+approved 列表并补发口令。
+
+---
+
 ## 5. 风险与缓解
 
 | 风险 | 影响 | 缓解 |
@@ -459,16 +550,18 @@ mypy = "*"
 
 ## 10. 当前下一步
 
-**☞ M10 ✅ 完成 —— v1.0.0 发布候选**
+**☞ v1.0.0 ✅ 已发布；v2 报销系统规格已落档，等待用户确认即可进入 M11**
 
-全部 10 个里程碑完成。下一步：
-1. 在生产服务器上 `git pull && docker compose up -d --build`
-2. 按 [TESTING.md](TESTING.md) 60+ 步骤端到端验收
-3. 验收通过后打 `v1.0.0` 标签
+v1 状态：10/10 ✅ —— 在生产环境按 [TESTING.md](TESTING.md) 端到端验收。
 
-后续 v1.x 迭代候选：
+v2 启动顺序：
+1. 用户审阅 [REQUIREMENTS §8.5](REQUIREMENTS.md) + 本文档 M11–M14 设计
+2. 创建特性分支 `feature/M11-reimbursement-infra` 开始数据层与配置
+3. 按 §4b 任务清单逐项推进
+
+v1.x 迭代候选（与 v2 并行可做）：
 - 回群密钥管理 UI（M5 占位）：完整的搜索 / 重置 / 撤销 / 历史查询
-- 用户主动重置密钥（1 次/天频控） —— `recovery_reset_throttle` 表已就绪
+- 用户主动重置密钥（1 次/天频控）—— `recovery_reset_throttle` 表已就绪
 - 申请材料后台导出（CSV）
 - 多语言（i18n）—— 当前仅中文
 
@@ -555,5 +648,5 @@ mypy = "*"
 
 ---
 
-**文档版本：v1.2（M10 完成 —— 全部 10 个里程碑达成，v1.0.0 发布候选）**
+**文档版本：v1.3（新增 M11–M14 报销系统里程碑，待开工）**
 **最后更新：2026-05-12**

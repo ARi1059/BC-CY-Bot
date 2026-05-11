@@ -920,7 +920,261 @@ audit_logs              操作审计日志
 
 ---
 
-## 9. 已决策事项汇总
+## 8.5 报销系统（v2 新增）
+
+> v1.0.0 完成后增补的功能模块。用户审核通过入群后，可凭同一套材料发起报销，由管理员审核 → 输入支付宝口令红包 → Bot 转发付款。
+
+### 8.5.1 设计目标
+
+- 让已入群成员凭"约课记录 / 上课手势 / 出击报告"申请活动报销
+- 全程内联按钮 + 多步引导，与入群审核风格一致
+- 强约束：成员资格 + 冷却时间 + 月预算池 三层限流
+- 完整审计：每次申请、每次审核、每次付款都落库 + 日志频道留痕
+- 周报 / 月报自动私聊推送给所有超级管理员
+
+### 8.5.2 角色权责（在主体系上的扩展）
+
+| 角色 | 新增权责 |
+|------|---------|
+| **申请人** | 已通过入群审核者可发起报销；提交材料；接收口令红包 |
+| **审核者**（任一管理员） | 双消息推送（含媒体组+caption）→ 通过/拒绝 → 通过后**输入支付宝口令红包文本** → Bot 转发给申请人 |
+| **超级管理员** | 全权配置：固定金额、月预算、冷却天数、重置日、资格群/频道列表；按用户覆盖冷却；接收周报/月报 |
+
+### 8.5.3 用户侧：发起报销
+
+#### 8.5.3.1 入口
+
+- `/reimburse` 命令 或 在 `/start` 欢迎卡片增加 `[💰 申请报销]` 按钮
+- 入口立即做 **3 层预校验**：
+  1. **入群资格**：`applications.status='approved'` 至少 1 条
+  2. **群组/频道资格**：在**所有**已配置 `eligibility_chats` 中均为 member/admin/creator/restricted
+  3. **冷却时间**：上次审核通过的 `reviewed_at` 距今 ≥ `cooldown_days`（默认 7，可全局调整或按用户覆盖）
+  4. **月预算**：当前 `monthly_remaining > fixed_amount`（不能扣到负）
+
+任一失败 → 友好提示文案 + 终止，**不进 wizard**。
+
+#### 8.5.3.2 报销 wizard
+
+引导式逐项提交，与入群 wizard 完全一致的规则：
+- 步骤 1：约课记录（单张图，禁媒体组）
+- 步骤 2：上课手势（单张图）
+- 步骤 3：出击报告（文本）
+- 步骤 4：预览 → `[✅ 确认提交]` / `[✏️ 重新提交]` / `[« 上一步]` / `[❌ 取消]`
+
+提交后 `reimbursement_requests.status='pending'`，触发管理员侧推送。
+
+### 8.5.4 管理员侧：审核 + 付款
+
+#### 8.5.4.1 推送（与 §3.2.1 双消息同构）
+
+- 消息 ①：媒体组（约课记录 + 上课手势），首图 caption = 出击报告
+- 消息 ②：申请人信息 + 金额 + 历史报销次数 + `[✅ 通过] [❌ 拒绝] [👁 重发审核材料]`
+- 报告超长 → 降级三消息
+- 行锁防多管理员并发审核（同 §3.3.5 代审型）
+
+#### 8.5.4.2 通过流程
+
+1. 管理员点 `[✅ 通过]`
+2. 检查月预算 `>= fixed_amount`；不足 → 该申请改 `rejected`（原因 = "本月预算已用尽，已退回"）+ 推送日志 + 通知申请人
+3. 月预算扣减 `fixed_amount`，`status='approved'` + `reviewed_at`
+4. Bot 私聊审核者："✅ 已批准，请发送支付宝口令红包文本（**5 分钟内有效**）"
+5. 审核者发文本 → Bot 校验非空 → 保存到 `reimbursement_requests.alipay_code_text` + `paid_by_telegram_id` + `paid_at`
+6. Bot 把口令文本转发给申请人："🎁 您的报销已批准，请兑换"
+7. `status='paid'`，编辑审核消息 ② 为 `✅ 已通过 + 已付款 by @xxx · HH:MM`
+8. 日志频道：`💰 报销已发放` 卡片
+
+**异常分支：**
+- 5 分钟超时未发口令 → `status='approved'`（保留），管理员可后续 `/admin → 报销管理 → 已批准待付款` 补发
+- 管理员发的不是文本（如图片）→ Bot 提示"请发送文本口令"，状态保留
+
+#### 8.5.4.3 拒绝流程
+
+- 与入群审核同（§3.2.2）：`[✏️ 填写原因] / [⏩ 跳过]`
+- 拒绝**不扣预算**
+- 通知申请人 + 日志频道 `❌ 报销拒绝`
+
+### 8.5.5 报销池（月预算）
+
+| 配置项 | 默认 | 说明 |
+|--------|:----:|------|
+| `reimbursement_fixed_amount_cents` | 0 | 每次报销固定金额（分）。0 表示报销功能未启用 |
+| `reimbursement_monthly_budget_cents` | 0 | 当月预算（分）。0 = 无预算（即不开启月限） |
+| `reimbursement_monthly_remaining_cents` | = 月预算 | 实时余额；扣减式 |
+| `reimbursement_budget_reset_day` | 1 | 每月第几日 00:00 重置（1–28） |
+| `reimbursement_global_enabled` | false | 总开关，默认关闭，需超管显式打开 |
+
+**扣减时机**：管理员点 `[✅ 通过]` 那一刻扣减；拒绝不扣，月底未发放的也不退（账面已花 = 已发放，与"批准但未付款"的处理简化合一）。
+
+**重置**：每天 00:00 由 JobQueue 检查；当日是 `reset_day` 则把 `monthly_remaining` 重置为 `monthly_budget`。
+
+### 8.5.6 冷却时间（rate limiting）
+
+| 配置项 | 默认 | 说明 |
+|--------|:----:|------|
+| `reimbursement_default_cooldown_days` | 7 | 全局默认冷却天数；下次报销须距上次 `reviewed_at` ≥ N 天 |
+| `reimbursement_user_overrides`（表）| – | 单用户覆盖：`telegram_user_id → cooldown_days` |
+
+**起算点**：上一次 `status='approved'` 或 `status='paid'` 的 `reviewed_at`；rejected 的不计入冷却。
+
+### 8.5.7 资格校验（成员身份）
+
+#### 8.5.7.1 资格群组/频道列表
+- 新表 `eligibility_chats`：管理员通过 `/admin → 报销管理 → 资格列表` 添加（转发消息识别 chat_id，同 §3.3.2）
+- 必须**全部都是 active**，且申请人**在每一个里**才合格
+- 校验时机：用户每次发 `/reimburse` 时即查
+
+#### 8.5.7.2 校验实现
+- 对每个 active 配置项调 `getChatMember(chat_id, applicant_user_id)`
+- 任一返回 `left`/`kicked`/`not found`/异常 → 资格失败
+- 缓存：成功结果 5 分钟，失败结果不缓存
+- 提示文案：「您不符合报销资格，请联系管理员」（不暴露细节哪个群缺）
+
+### 8.5.8 周报 / 月报
+
+#### 8.5.8.1 触发
+- 周报：每周一 00:05 由 JobQueue 触发，统计上周（周一 00:00 ~ 周日 23:59）
+- 月报：每月 1 日 00:10 触发，统计上月
+
+#### 8.5.8.2 内容
+```
+📊 报销周报 (2026-05-05 ~ 2026-05-11)
+─────────────────────────
+申请数：23
+  已批准：18  已付款：18
+  已拒绝：4   待审核：1
+总发放：900.00 元（18 × 50 元）
+本月已用：3200.00 / 5000.00 元（剩余 1800.00）
+
+📌 报销次数 Top
+  @alice：3 次
+  @bob：2 次
+  @carol：2 次
+  ...
+
+⚠️ 异常事件：0
+```
+
+#### 8.5.8.3 推送对象
+- 私聊推送给**所有**超级管理员（不广播给副管理员）
+- 失败重试 3 次后写错误日志，不阻塞 JobQueue
+
+### 8.5.9 管理员面板 `[💰 报销管理]`
+
+进入子菜单（[REQ §3.3](REQUIREMENTS.md) 主面板新增第 12 项按钮）：
+
+```
+💰 报销管理（超级管理员）
+
+📋 系统配置
+ ├ 总开关：开启 / 关闭
+ ├ 固定金额：50.00 元
+ ├ 月预算：5000.00 元（剩余 1800.00）
+ ├ 冷却天数：7
+ └ 重置日：每月 1 日
+
+🎯 资格列表
+ └ 群组×3 + 频道×1
+
+🛡 用户冷却覆盖
+ └ 已覆盖 2 位用户
+
+📋 待审核 (3) / 待付款 (1)
+📊 历史记录（最近 30 条）
+```
+
+- 「系统配置」：仅超级管理员可见与可改；副管理员只读
+- 「资格列表」：所有管理员可读，超级管理员可改
+- 「用户冷却覆盖」：仅超级管理员
+- 「待审核 / 待付款」：所有管理员可见，含 callback 跳转重发审核材料
+- 「历史记录」：分页查看历史报销
+
+### 8.5.10 数据模型新增
+
+```
+reimbursement_requests          报销请求
+├─ id (PK)
+├─ applicant_telegram_id        BigInt
+├─ applicant_username
+├─ application_id               FK → applications（必须 status='approved'）
+├─ status                       'wizard' | 'pending' | 'approved' | 'rejected' | 'cancelled' | 'paid'
+├─ wizard_step
+├─ reject_reason
+├─ amount_cents                 申请时刻的快照
+├─ eligibility_check_passed
+├─ submitted_at
+├─ reviewed_at                  approved/rejected 的时刻
+├─ reviewed_by_telegram_id
+├─ paid_at                      实际口令转发时刻
+├─ paid_by_telegram_id          实际操作的管理员
+├─ alipay_code_text             口令原文（敏感，仅管理员可查）
+├─ locked_by                    行锁字段
+└─ created_at
+
+reimbursement_materials         报销材料
+├─ id (PK)
+├─ reimbursement_id             FK → reimbursement_requests
+├─ material_type                '约课记录' | '上课手势' | '出击报告'
+├─ content_type                 'photo' | 'text'
+├─ telegram_file_id
+├─ text_content
+├─ original_message_id          BigInt（forwardMessage 备用）
+└─ submitted_at
+
+reimbursement_audit_messages    审核消息推送记录（同 audit_messages 模式）
+├─ id (PK)
+├─ reimbursement_id             FK
+├─ reviewer_telegram_id
+├─ media_message_id
+├─ text_message_id
+├─ report_message_id            长报告降级时的独立消息 ID
+└─ sent_at
+
+eligibility_chats               资格校验群/频道列表
+├─ id (PK)
+├─ telegram_chat_id             UNIQUE
+├─ chat_type                    'group' | 'supergroup' | 'channel'
+├─ name
+├─ is_active
+└─ created_at
+
+reimbursement_user_overrides    单用户冷却覆盖
+├─ id (PK)
+├─ telegram_user_id             UNIQUE
+├─ cooldown_days                INT, 覆盖全局默认
+├─ notes                        TEXT (可空)
+├─ added_by                     FK → admins
+└─ created_at
+
+settings                        新增 KV
+├─ 'reimbursement_global_enabled'
+├─ 'reimbursement_fixed_amount_cents'
+├─ 'reimbursement_monthly_budget_cents'
+├─ 'reimbursement_monthly_remaining_cents'
+├─ 'reimbursement_budget_reset_day'
+└─ 'reimbursement_default_cooldown_days'
+```
+
+### 8.5.11 边界与异常处理
+
+| 场景 | 处理方式 |
+|------|---------|
+| 用户未通过入群审核就发 `/reimburse` | 直接拒绝："请先完成入群申请并通过审核" |
+| 资格校验失败（不在任一指定群） | "您不符合报销资格，请联系管理员"（不暴露哪个群缺） |
+| 冷却时间未到 | 提示剩余天数 |
+| 月预算不足（用户提交时） | 提示"本月预算已不足以支付一次报销，请月初再试" |
+| 月预算不足（审核通过时） | 该申请改 rejected + 原因 "本月预算已用尽，已退回" |
+| 管理员通过后 5 分钟未发口令 | 状态保持 approved，可在管理面板「待付款」补发 |
+| 管理员发的不是文本 | 提示"请发送文本口令"，重试 |
+| 配置 fixed_amount=0 或 monthly_budget=0 或 enabled=false | 阻止用户进入 wizard，提示"功能未启用" |
+| 资格列表为空 | 视为"没有限制"还是"全员拒绝"？→ **全员拒绝**（更严谨；超管必须显式配置至少 1 个） |
+
+### 8.5.12 安全考量
+
+- 口令红包文本是**敏感数据**，仅审核者私聊看到 + DB 存储 + 申请人接收方私聊看到；不进入日志频道（仅卡片显示"💰 已发放，金额 50 元"）
+- 月预算 / 单次金额由超级管理员配置，副管理员不可改
+- 多管理员并发审核：行锁 + status 复检（同 §M3）
+
+
 
 > 截至 v0.9，所有待确认项已全部敲定，可进入开发阶段。
 
@@ -957,5 +1211,5 @@ audit_logs              操作审计日志
 
 ---
 
-**文档版本：v1.0（流程打磨：禁用媒体组 / 审核双消息含 caption 报告 / 出击报告频道仅转发报告本身）**
+**文档版本：v1.1（新增 §8.5 报销系统规格 —— v2 范畴）**
 **最后更新:2026-05-12**
