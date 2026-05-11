@@ -21,7 +21,7 @@
 | M9 | 邀请人面板 `/panel` + 统计报表 | 1d | ✅ 已完成 | 2026-05-12 |
 | M10 | Docker 化 + 部署文档 + 联调 | 1.5d | ✅ 已完成 | 2026-05-12 |
 | **v2 · 报销系统** | | | | |
-| M11 | 报销基础设施（5 张表 / migration / 设置项 / 资格列表 / 用户覆盖） | 1.5d | ⬜ 未开始 | – |
+| M11 | 报销基础设施（5 张表 / migration / 设置项 / 资格列表 / 用户覆盖） | 1.5d | ✅ 已完成 | 2026-05-12 |
 | M12 | 用户侧报销 wizard（3 层预校验 + 引导提交 + 预览） | 1.5d | ⬜ 未开始 | – |
 | M13 | 管理员侧审核 + 口令红包转发（双消息 + 等待状态机） | 1.5d | ⬜ 未开始 | – |
 | M14 | 周报 / 月报 JobQueue + 报销管理 UI + 月预算重置 | 1d | ⬜ 未开始 | – |
@@ -400,26 +400,28 @@ BC-CY-Bot/
 
 > 详细规格见 [REQUIREMENTS §8.5](REQUIREMENTS.md)。沿用 v1 的"严格状态机 + 服务层零 Telegram 依赖 + 单元测试"模式。
 
-### M11 报销基础设施（1.5 天）
+### M11 报销基础设施（1.5 天） ✅
 
 **目标**：所有数据层 + 配置项 + 资格列表管理就绪，无业务流程。
 
-- [ ] 5 张新表 + 1 个 alembic migration
-  - [ ] reimbursement_requests
-  - [ ] reimbursement_materials（含 original_message_id）
-  - [ ] reimbursement_audit_messages
-  - [ ] eligibility_chats
-  - [ ] reimbursement_user_overrides
-- [ ] enums.py 新增：报销状态码、材料类型与 v1 共用、settings keys、cleanup 字段不再需要（属密钥）
-- [ ] settings 表新增 6 个 key，默认值：global_enabled=false / fixed_amount=0 / monthly_budget=0 / remaining=0 / reset_day=1 / cooldown_days=7
-- [ ] repositories 新增：reimbursement_repo / eligibility_chat_repo / reimbursement_settings 复用 settings_repo
-- [ ] handlers/admin 中新增 `[💰 报销管理]` 入口，先做骨架 + 子菜单：
-  - [ ] 系统配置（开关 / 金额 / 月预算 / 冷却天数 / 重置日）
-  - [ ] 资格列表（添加 = 转发消息识别）
-  - [ ] 用户冷却覆盖
-- [ ] 单元测试：仓库 CRUD + 资格列表添加 + 设置读写
+- [x] 5 张新表 + 1 个 alembic migration (`0dfedbea360e_add_reimbursement_tables`)
+  - [x] reimbursement_requests（含 amount_cents 快照、locked_by、alipay_code_text、paid_at/paid_by）
+  - [x] reimbursement_materials（含 original_message_id）
+  - [x] reimbursement_audit_messages（与 audit_messages 同构）
+  - [x] eligibility_chats（group/supergroup/channel + is_active）
+  - [x] reimbursement_user_overrides（按 telegram_user_id 唯一覆盖）
+- [x] enums.py 新增：REI_STATUS_* / 6 个 SK_REI_* keys
+- [x] settings 默认值由读取函数兜底：global_enabled=false / fixed_amount=0 / monthly_budget=0 / remaining=0 / reset_day=1 / cooldown_days=7
+- [x] repositories 新增：reimbursement_repo（请求 + 材料 + 列表查询 + 区间计数）/ eligibility_chat_repo / reimbursement_override_repo / reimbursement_settings 包装层（cents↔元转换 + clamp）
+- [x] handlers/admin/reimbursement.py：`[💰 报销管理]` 入口 + 三大子模块
+  - [x] 系统配置面板（仅超管可改：toggle / amount / budget / reset_remaining / cooldown / reset_day）
+  - [x] 资格列表（转发消息识别 chat_id，支持 group/supergroup/channel；删除带二次确认）
+  - [x] 用户冷却覆盖（一行格式 `user_id days [notes]` upsert，删除带二次确认）
+- [x] 主面板新增 `[💰 报销管理]` 按钮（位于 `[🔑 回群密钥]` 旁，所有管理员可见）
+- [x] 消息分发链：增补 `consume_text` + `consume_eligibility_forward`
+- [x] 单元测试：14 个用例（设置默认值/读写/clamp/金额解析/资格 CRUD + UNIQUE/覆盖 upsert/请求状态机/材料增删/列表/区间计数）
 
-**验收**：超管能在 `/admin → [💰 报销管理]` 完成"开启系统 + 设置 50 元/月 5000 元 + 添加 1 群 1 频道"的初始化。
+**验收**：✅ 106/106 单元测试通过（M11 新增 14）；81 handlers 注册成功；超管可在 `/admin → [💰 报销管理]` 完成"开启 + 50 元固定 / 5000 元月预算 / 添加 1 群 1 频道 / 添加 1 个用户覆盖" 的完整初始化。
 
 ### M12 用户侧报销 wizard（1.5 天）
 
@@ -550,14 +552,14 @@ mypy = "*"
 
 ## 10. 当前下一步
 
-**☞ v1.0.0 ✅ 已发布；v2 报销系统规格已落档，等待用户确认即可进入 M11**
+**☞ M11 ✅ 完成；下一步进入 M12（用户侧报销 wizard）**
 
-v1 状态：10/10 ✅ —— 在生产环境按 [TESTING.md](TESTING.md) 端到端验收。
+v2 进度：M11 ✅ / M12 ⬜ / M13 ⬜ / M14 ⬜
 
-v2 启动顺序：
-1. 用户审阅 [REQUIREMENTS §8.5](REQUIREMENTS.md) + 本文档 M11–M14 设计
-2. 创建特性分支 `feature/M11-reimbursement-infra` 开始数据层与配置
-3. 按 §4b 任务清单逐项推进
+M12 启动顺序：
+1. 创建特性分支 `feature/M12-reimbursement-wizard`
+2. 实现 `/reimburse` 命令 + 3 层预校验 + 引导式 wizard（同入群 wizard 模式）
+3. 完成后合并到 main，进入 M13
 
 v1.x 迭代候选（与 v2 并行可做）：
 - 回群密钥管理 UI（M5 占位）：完整的搜索 / 重置 / 撤销 / 历史查询
@@ -572,6 +574,13 @@ v1.x 迭代候选（与 v2 并行可做）：
 > 开发过程中的偏离决策、阻塞、关键判断在此追加。每条带日期。
 
 - `2026-05-12` 文档创建，与 REQUIREMENTS v1.0 对齐，未进入开发。
+- `2026-05-12` **M11 完成 —— 报销系统基础设施落地**。关键决策与发现：
+  - **金额统一用 cents（分）**：避免浮点累计误差。所有 settings 存 int 分；展示层 `cents_to_yuan_display` 做"50.00"格式化。
+  - **reimbursement_settings 作为薄包装层**：把 6 个 key 的"读 int + clamp + bool 文本"细节封装，handler 只调高层 API；保持 settings_repo 原样通用。
+  - **`[💰 报销管理]` 三层权限**：所有 admin 可见入口与列表；只有 super 能改设置/资格/覆盖。`require_super` 在每一个 mutating handler 入口与 awaiting consumer 内复检（防伪造 callback_data 绕过）。
+  - **资格列表的转发识别**：复用 `groups.consume_add_group_forward` 模式，但接受 `channel` 类型；与"目标群组"区分（后者只接受 group/supergroup）。
+  - **用户覆盖 upsert**：第二次添加同一 user_id 不抛错，直接更新；避免管理员先删再加的繁琐操作。
+  - **每次尝试都写一行 attempt 风格**沿用：reimbursement 仓库目前先做 CRUD 基线，M12 引入 wizard 时会加 wizard_step 状态机。
 - `2026-05-12` **M10 完成 —— 项目交付**。关键决策与发现：
   - **Dockerfile 多阶段构建**：原单阶段先 COPY pyproject 再 pip install 实际跑不通（hatchling 需要源码），改为 builder 阶段一次性 COPY pyproject + src 装入 /venv，再到 runtime 阶段整体复制；最终镜像不带 build 工具，体积更小。
   - **跳过 bot 容器 healthcheck**：python:3.11-slim 不带 procps（pgrep/ps），加 procps 又增体积；polling Bot 崩溃由 `restart: always` 兜底足够，HTTP 服务才需要 healthcheck。
@@ -648,5 +657,5 @@ v1.x 迭代候选（与 v2 并行可做）：
 
 ---
 
-**文档版本：v1.3（新增 M11–M14 报销系统里程碑，待开工）**
+**文档版本：v1.4（M11 完成 —— 报销系统基础设施就绪）**
 **最后更新：2026-05-12**

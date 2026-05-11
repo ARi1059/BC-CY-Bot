@@ -60,6 +60,43 @@ ADM_CONFIG_EDIT_TTL = "admin:cfg:ttl"
 # === Stats ===
 ADM_STATS = "admin:stats"
 
+# === Reimbursement (v2 §8.5) ===
+ADM_REI = "admin:rei"
+# Settings (super-only mutations)
+ADM_REI_SETTINGS = "admin:rei:s"
+ADM_REI_TOGGLE = "admin:rei:s:tog"
+ADM_REI_SET_AMOUNT = "admin:rei:s:amt"
+ADM_REI_SET_BUDGET = "admin:rei:s:bdg"
+ADM_REI_RESET_REMAINING = "admin:rei:s:rst"
+ADM_REI_SET_COOLDOWN = "admin:rei:s:cd"
+ADM_REI_SET_RESET_DAY = "admin:rei:s:rd"
+# Eligibility chats
+ADM_REI_ELIG = "admin:rei:e"
+ADM_REI_ELIG_ADD = "admin:rei:e:add"
+ADM_REI_ELIG_REMOVE_PREFIX = "admin:rei:e:rm:"
+ADM_REI_ELIG_REMOVE_CONFIRM_PREFIX = "admin:rei:e:rmc:"
+# User overrides
+ADM_REI_OVERRIDES = "admin:rei:o"
+ADM_REI_OVERRIDE_ADD = "admin:rei:o:add"
+ADM_REI_OVERRIDE_REMOVE_PREFIX = "admin:rei:o:rm:"
+ADM_REI_OVERRIDE_REMOVE_CONFIRM_PREFIX = "admin:rei:o:rmc:"
+
+
+def parse_rei_elig_remove(d: str) -> int | None:
+    return _parse_int_suffix(d, ADM_REI_ELIG_REMOVE_PREFIX)
+
+
+def parse_rei_elig_remove_confirm(d: str) -> int | None:
+    return _parse_int_suffix(d, ADM_REI_ELIG_REMOVE_CONFIRM_PREFIX)
+
+
+def parse_rei_override_remove(d: str) -> int | None:
+    return _parse_int_suffix(d, ADM_REI_OVERRIDE_REMOVE_PREFIX)
+
+
+def parse_rei_override_remove_confirm(d: str) -> int | None:
+    return _parse_int_suffix(d, ADM_REI_OVERRIDE_REMOVE_CONFIRM_PREFIX)
+
 # === 占位（后续里程碑接管）===
 ADM_PENDING = "admin:pending"  # M3 已实现：跳到待审核列表
 ADM_KEYS = "admin:keys"  # M8 实现

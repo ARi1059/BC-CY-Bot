@@ -19,6 +19,7 @@ from bccy_bot.handlers.admin import (
     groups as adm_groups,
     inviters as adm_inviters,
     panel as adm_panel,
+    reimbursement as adm_rei,
     settings_ui as adm_settings,
     stats as adm_stats,
     stubs as adm_stubs,
@@ -72,6 +73,22 @@ from bccy_bot.keyboards.admin_callbacks import (
     ADM_MGMT_TRANSFER_CONFIRM_PREFIX,
     ADM_MGMT_TRANSFER_PREFIX,
     ADM_PENDING,
+    ADM_REI,
+    ADM_REI_ELIG,
+    ADM_REI_ELIG_ADD,
+    ADM_REI_ELIG_REMOVE_CONFIRM_PREFIX,
+    ADM_REI_ELIG_REMOVE_PREFIX,
+    ADM_REI_OVERRIDE_ADD,
+    ADM_REI_OVERRIDE_REMOVE_CONFIRM_PREFIX,
+    ADM_REI_OVERRIDE_REMOVE_PREFIX,
+    ADM_REI_OVERRIDES,
+    ADM_REI_RESET_REMAINING,
+    ADM_REI_SET_AMOUNT,
+    ADM_REI_SET_BUDGET,
+    ADM_REI_SET_COOLDOWN,
+    ADM_REI_SET_RESET_DAY,
+    ADM_REI_SETTINGS,
+    ADM_REI_TOGGLE,
     ADM_REPORT_CHANNEL,
     ADM_REPORT_CHANNEL_BIND,
     ADM_REPORT_CHANNEL_UNBIND,
@@ -337,6 +354,62 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(adm_stats.on_stats, pattern=f"^{ADM_STATS}$"))
     application.add_handler(CallbackQueryHandler(adm_stubs.on_pending, pattern=f"^{ADM_PENDING}$"))
     application.add_handler(CallbackQueryHandler(adm_stubs.on_keys, pattern=f"^{ADM_KEYS}$"))
+
+    # === Admin: reimbursement panel ===
+    application.add_handler(CallbackQueryHandler(adm_rei.on_panel, pattern=f"^{ADM_REI}$"))
+    application.add_handler(
+        CallbackQueryHandler(adm_rei.on_settings_panel, pattern=f"^{ADM_REI_SETTINGS}$")
+    )
+    application.add_handler(CallbackQueryHandler(adm_rei.on_toggle, pattern=f"^{ADM_REI_TOGGLE}$"))
+    application.add_handler(
+        CallbackQueryHandler(adm_rei.on_set_amount, pattern=f"^{ADM_REI_SET_AMOUNT}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_rei.on_set_budget, pattern=f"^{ADM_REI_SET_BUDGET}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_rei.on_reset_remaining, pattern=f"^{ADM_REI_RESET_REMAINING}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_rei.on_set_cooldown, pattern=f"^{ADM_REI_SET_COOLDOWN}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_rei.on_set_reset_day, pattern=f"^{ADM_REI_SET_RESET_DAY}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_rei.on_eligibility_panel, pattern=f"^{ADM_REI_ELIG}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_rei.on_eligibility_add, pattern=f"^{ADM_REI_ELIG_ADD}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            adm_rei.on_eligibility_remove, pattern=f"^{ADM_REI_ELIG_REMOVE_PREFIX}\\d+$"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            adm_rei.on_eligibility_remove_confirm,
+            pattern=f"^{ADM_REI_ELIG_REMOVE_CONFIRM_PREFIX}\\d+$",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_rei.on_overrides_panel, pattern=f"^{ADM_REI_OVERRIDES}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_rei.on_override_add, pattern=f"^{ADM_REI_OVERRIDE_ADD}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            adm_rei.on_override_remove, pattern=f"^{ADM_REI_OVERRIDE_REMOVE_PREFIX}\\d+$"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            adm_rei.on_override_remove_confirm,
+            pattern=f"^{ADM_REI_OVERRIDE_REMOVE_CONFIRM_PREFIX}\\d+$",
+        )
+    )
 
     # === Inviter /panel callbacks ===
     application.add_handler(CallbackQueryHandler(inviter_panel.on_back, pattern=f"^{INV_PANEL_BACK}$"))
