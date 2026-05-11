@@ -21,6 +21,16 @@ async def get_by_id(session: AsyncSession, inviter_id: int) -> Inviter | None:
     return await session.get(Inviter, inviter_id)
 
 
+async def find_by_telegram_user_id(
+    session: AsyncSession, telegram_user_id: int
+) -> Inviter | None:
+    """根据 Telegram 用户 ID 查找邀请人（用于 /panel 权限校验）。"""
+    result = await session.execute(
+        select(Inviter).where(Inviter.telegram_user_id == telegram_user_id).limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 async def create(
     session: AsyncSession,
     *,

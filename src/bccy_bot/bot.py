@@ -25,9 +25,16 @@ from bccy_bot.handlers.admin import (
 )
 from bccy_bot.handlers.common import chat_member as chat_member_handler
 from bccy_bot.handlers.inviter import audit as inviter_audit
+from bccy_bot.handlers.inviter import panel as inviter_panel
 from bccy_bot.handlers.user import recovery as user_recovery
 from bccy_bot.handlers.user import wizard as wizard_handlers
 from bccy_bot.handlers.user.start import start_command
+from bccy_bot.keyboards.inviter_callbacks import (
+    INV_PANEL_BACK,
+    INV_PANEL_PENDING,
+    INV_PANEL_REPOST_PREFIX,
+    INV_PANEL_STATS,
+)
 from bccy_bot.keyboards.admin_callbacks import (
     ADM_BACK,
     ADM_BL_ADD,
@@ -156,6 +163,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", wizard_handlers.on_help))
     application.add_handler(CommandHandler("admin", adm_panel.admin_command))
+    application.add_handler(CommandHandler("panel", inviter_panel.panel_command))
 
     # === Welcome card callbacks ===
     application.add_handler(CallbackQueryHandler(wizard_handlers.on_start_apply, pattern=f"^{USER_START_APPLY}$"))
@@ -329,6 +337,20 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(adm_stats.on_stats, pattern=f"^{ADM_STATS}$"))
     application.add_handler(CallbackQueryHandler(adm_stubs.on_pending, pattern=f"^{ADM_PENDING}$"))
     application.add_handler(CallbackQueryHandler(adm_stubs.on_keys, pattern=f"^{ADM_KEYS}$"))
+
+    # === Inviter /panel callbacks ===
+    application.add_handler(CallbackQueryHandler(inviter_panel.on_back, pattern=f"^{INV_PANEL_BACK}$"))
+    application.add_handler(
+        CallbackQueryHandler(inviter_panel.on_pending_list, pattern=f"^{INV_PANEL_PENDING}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(inviter_panel.on_my_stats, pattern=f"^{INV_PANEL_STATS}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            inviter_panel.on_repost_materials, pattern=f"^{INV_PANEL_REPOST_PREFIX}\\d+$"
+        )
+    )
 
     # === chat_member 更新（监听入群事件） ===
     application.add_handler(
