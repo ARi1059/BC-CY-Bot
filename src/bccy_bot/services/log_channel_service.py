@@ -222,6 +222,52 @@ async def push_anomaly(
     await _safe_push(session, bot, text=text, kind="anomaly_join")
 
 
+async def push_recovery_key_used(
+    session: AsyncSession,
+    bot: Bot,
+    *,
+    application: Application,
+    old_owner_telegram_id: int,
+    new_owner_telegram_id: int,
+    new_owner_username: str | None,
+    invite_link_url: str,
+    cleanup_summary: str,
+    old_account_status: str,
+) -> None:
+    """🔑 回群密钥使用 卡片（[REQ §3.8.6]）。"""
+    inv = await inviter_repo.get_by_id(session, application.inviter_id) if application.inviter_id else None
+    new_label = f"@{new_owner_username}" if new_owner_username else "（无用户名）"
+    text = (
+        f"🔑 回群密钥使用 #A{application.id}\n"
+        "─────────────────────────\n"
+        f"🎓 邀请人：{_inviter_label(inv)}\n"
+        f"👤 原账号：({old_owner_telegram_id}) · 状态：{old_account_status}\n"
+        f"🚀 新账号：{new_label} ({new_owner_telegram_id})\n"
+        f"🔗 新链接：{_mask_link(invite_link_url)}\n"
+        f"🧹 清理动作：{cleanup_summary}\n"
+        f"🕐 时间：{_now_str()}"
+    )
+    await _safe_push(session, bot, text=text, kind="recovery_key_used")
+
+
+async def push_recovery_key_anomaly(
+    session: AsyncSession,
+    bot: Bot,
+    *,
+    claimer_telegram_id: int,
+    reason: str,
+) -> None:
+    """⚠️ 密钥使用异常（同 ID 拦截 / 频率锁触发等）。"""
+    text = (
+        f"⚠️ 密钥使用异常\n"
+        "─────────────────────────\n"
+        f"尝试者：({claimer_telegram_id})\n"
+        f"原因：{reason}\n"
+        f"🕐 时间：{_now_str()}"
+    )
+    await _safe_push(session, bot, text=text, kind="recovery_key_anomaly")
+
+
 async def push_link_expired(
     session: AsyncSession,
     bot: Bot,

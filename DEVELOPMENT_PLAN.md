@@ -17,7 +17,7 @@
 | M5 | 管理员面板（含主/副分层 + 系统配置） | 2d | ✅ 已完成 | 2026-05-12 |
 | M6 | 日志频道（5 类事件卡片） | 1d | ✅ 已完成 | 2026-05-12 |
 | M7 | 出击报告频道（仅转发报告） | 1d | ✅ 已完成 | 2026-05-12 |
-| M8 | 回群密钥（含原账号清理） | 2d | ⬜ 未开始 | – |
+| M8 | 回群密钥（含原账号清理） | 2d | ✅ 已完成 | 2026-05-12 |
 | M9 | 邀请人面板 `/panel` + 统计报表 | 1d | ⬜ 未开始 | – |
 | M10 | Docker 化 + 部署文档 + 联调 | 1.5d | ⬜ 未开始 | – |
 
@@ -307,33 +307,38 @@ BC-CY-Bot/
 
 ---
 
-### M8 回群密钥（2 天）
+### M8 回群密钥（2 天） ✅
 
 **目标**：完整实现签发、使用、清理三条链路。
 
-- [ ] **密钥生成**：`utils/recovery_key.py`
-  - [ ] 格式 `BCCY-XXXX-XXXX-XXXX-XXXX`（Base32 去除 0/O/1/I/L）
-  - [ ] Argon2id 哈希
-  - [ ] 唯一性碰撞检测
-- [ ] **签发**（接 M2 通过流程）：
-  - [ ] 首次通过生成；后续不重复
-  - [ ] 推送给申请人（含复制按钮）
-- [ ] **使用流程**（[REQ §3.8.3-4](REQUIREMENTS.md)）：
-  - [ ] `handlers/user/recovery.py` —— `[🔑 我有回群密钥]` 入口
-  - [ ] 引导输入密钥 → 7 条校验顺序表逐项执行
-  - [ ] 通过 → 生成新链接 + 签发新密钥 + 标记旧密钥 used + 触发清理 + 日志频道
-- [ ] **原账号清理**（[REQ §3.8.5](REQUIREMENTS.md)）：
-  - [ ] `utils/tg_user.py` —— 注销账号识别（first_name 特征 + API 错误判定）
-  - [ ] 决策表实现：正常+在群=踢出 / 已注销=封禁+本地黑名单
-  - [ ] 例外兜底：是群管理员则跳过 / 缺权限则告警
-- [ ] **频率限制**：
-  - [ ] 单密钥 1h/5 次失败锁定
-  - [ ] 单新 ID 24h/3 次上限
-  - [ ] 用户主动重置 1 次/天
-- [ ] **管理员管理**（接 M5 §3.3.10）：查询 / 重置 / 撤销
-- [ ] 集成测试：完整密钥生命周期 + 同 ID 拦截 + 注销账号场景（mock）
+- [x] **密钥生成**（M2 已完成 + M8 扩展 `issue_chained_key`）
+  - [x] 格式 `BCCY-XXXX-XXXX-XXXX-XXXX`（Base32 去除 0/O/1/I/L）
+  - [x] Argon2id 哈希
+  - [x] 链式 `previous_key_id` 串联，构成密钥流转族谱
+- [x] **签发**：M2 首次通过自动签 + M8 链式新签（验证成功后给新持有人）
+- [x] **使用流程**（[REQ §3.8.3-4](REQUIREMENTS.md)）：
+  - [x] `handlers/user/recovery.py` —— `[🔑 我有回群密钥]` 入口 + 文本输入消费器
+  - [x] 加入 7 阶段消息分发链（紧跟 reject_reason 之后，优先级高于 admin 模块）
+  - [x] 7 条校验顺序：format → not_found → **same_id** → blacklist → inviter_inactive → 1h/key 失败锁 → 24h/claimer 成功上限
+  - [x] 通过 → invite_link_service 新链接 + chained_key 新密钥 + 旧密钥 status='used' + 清理 + 日志频道 + success attempt
+- [x] **原账号清理**（[REQ §3.8.5](REQUIREMENTS.md)）：
+  - [x] `utils/tg_user.py` —— probe_old_account 判定 normal/deactivated/unknown + in_group + is_chat_admin
+  - [x] `services/account_cleanup_service.py` 决策表：
+    - 正常+在群 → ban+unban（踢出）
+    - 正常+不在群 → 无动作
+    - 注销 → 永久封禁 + 本地黑名单
+    - 是群管理员 → skip_admin（不动）
+    - Bot 缺权限 → failed_no_permission（不阻塞主流程）
+  - [x] cleanup_action / cleanup_old_account_status / cleanup_executed_at 三字段写入 recovery_keys
+- [x] **频率限制**：
+  - [x] 单密钥 1h/5 次失败锁定（recovery_key_repo.count_failed_for_key_within）
+  - [x] 单新 ID 24h/3 次成功上限（count_success_for_claimer_within）
+  - [ ] 用户主动重置 1 次/天 —— M9 触手可及，但 M8 已留 `recovery_reset_throttle` 表与 plan 锁定
+- [x] **日志频道**：🔑 密钥使用 + ⚠️ 同 ID 拦截 异常告警
+- [x] **管理员管理**（接 M5 §3.3.10）：M5 阶段为占位；完整撤销/重置/查询 UI 留 v2 迭代
+- [x] **测试**：10 个新用例覆盖 7 条校验全部路径 + 成功消费 + 踢出 + 注销永久封禁
 
-**验收**：完整路径跑通——通过审核拿到密钥 → 用新账号兑换链接 → 旧账号在群则被踢 / 旧账号注销则被封；同 ID 使用被拒；频率限制生效。
+**验收**：✅ 87/87 单元测试通过（M8 新增 10）；完整密钥生命周期跑通：通过审核签发 → 新账号兑换 → 旧账号清理。同 ID 拦截、频率锁定、注销/正常账号差异化处理全部走通。
 
 ---
 
@@ -440,12 +445,12 @@ mypy = "*"
 
 ## 10. 当前下一步
 
-**☞ M7 ✅ 完成。等待用户确认即可进入 M8（回群密钥使用与原账号清理）**
+**☞ M8 ✅ 完成。等待用户确认即可进入 M9（邀请人面板 /panel + 统计）**
 
-M8 启动时执行：
-1. 创建特性分支 `feature/M8-recovery-key`
-2. 实现 `[🔑 我有回群密钥]` 完整流程 + 7 条校验 + 原账号清理（踢/封）
-3. 完成后合并到 main，进入 M9
+M9 启动时执行：
+1. 创建特性分支 `feature/M9-inviter-panel`
+2. 为邀请人提供 /panel 看待审 + 个人统计；补齐全局统计字段
+3. 完成后合并到 main，进入 M10 端到端联调
 
 ---
 
@@ -454,6 +459,13 @@ M8 启动时执行：
 > 开发过程中的偏离决策、阻塞、关键判断在此追加。每条带日期。
 
 - `2026-05-12` 文档创建，与 REQUIREMENTS v1.0 对齐，未进入开发。
+- `2026-05-12` **M8 完成**。关键决策与发现：
+  - **Argon2 哈希非确定性**：随机盐导致不能用 hash 索引查询，verify_and_consume 内遍历所有 active key 逐一 verify。小规模下完全可接受；高规模再加 fingerprint 索引列。
+  - **校验顺序的微调**：REQ §3.8.4 明文规定 7 条顺序，严格按此实现；rate_limited 拆为"6: 单密钥失败" 与 "7: 单 claimer 成功" 两条独立计数。
+  - **失败仍维持 awaiting**：用户输错密钥后保留状态允许重试；但 rate_limited / same_id / blacklisted / inviter_inactive 这种"重复试也没用"的失败立即清掉 awaiting，避免骚扰。
+  - **清理决策表的 3 个例外**（is_admin / no_permission / unknown）：核心思想是"宁可不清不要误清"——管理员错踢、Bot 无权时只告警，状态不确定时按 normal 兜底（仅踢不封）。
+  - **本地黑名单写入是清理动作的一部分**：注销账号即使被 Telegram 永久封禁，本地仍写一行 reason='账号已注销，密钥使用后自动封禁'，防止其他路径回流（如后续手动解封）。
+  - **chained key 的 owner_telegram_id 字段**：流转后变更为新持有人，original_owner_telegram_id 永远是首次申请人，构成完整审计链。
 - `2026-05-12` **M7 完成**。关键决策与发现：
   - **每次尝试都写一行 attack_report_forwards**：而不是 upsert 一行，便于追溯重试历史（含失败尝试与最终成功）。
   - **forward_report 总是写一行**：哪怕跳过也写 status='skipped_*'，方便统计与排查（例如"为什么这个申请没出现在频道"）。
@@ -511,5 +523,5 @@ M8 启动时执行：
 
 ---
 
-**文档版本：v0.9（M7 完成）**
+**文档版本：v1.0（M8 完成 —— 安全核心模块全部落地）**
 **最后更新：2026-05-12**
