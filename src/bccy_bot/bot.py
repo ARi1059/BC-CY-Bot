@@ -20,6 +20,7 @@ from bccy_bot.handlers.admin import (
     inviters as adm_inviters,
     panel as adm_panel,
     reimbursement as adm_rei,
+    reimbursement_audit as adm_rev,
     settings_ui as adm_settings,
     stats as adm_stats,
     stubs as adm_stubs,
@@ -124,6 +125,13 @@ from bccy_bot.keyboards.reimburse_callbacks import (
     REI_USER_PREVIEW_CONFIRM,
     REI_USER_PREVIEW_REDO,
 )
+from bccy_bot.keyboards.reimburse_audit_callbacks import (
+    REV_APPROVE_PREFIX,
+    REV_REJECT_PREFIX,
+    REV_REJECT_REASON_PREFIX,
+    REV_REJECT_SKIP_PREFIX,
+    REV_VIEW_PREFIX,
+)
 from bccy_bot.repositories.admin_repo import ensure_initial_super_admin
 from bccy_bot.services import link_tracking_service
 from bccy_bot.utils.session import get_session_factory
@@ -225,6 +233,23 @@ def build_application() -> Application:
     )
     application.add_handler(
         CallbackQueryHandler(user_reimburse.on_preview_redo, pattern=f"^{REI_USER_PREVIEW_REDO}$")
+    )
+
+    # === Reimbursement admin review callbacks ===
+    application.add_handler(
+        CallbackQueryHandler(adm_rev.on_approve, pattern=f"^{REV_APPROVE_PREFIX}\\d+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_rev.on_reject, pattern=f"^{REV_REJECT_PREFIX}\\d+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_rev.on_reject_reason, pattern=f"^{REV_REJECT_REASON_PREFIX}\\d+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_rev.on_reject_skip, pattern=f"^{REV_REJECT_SKIP_PREFIX}\\d+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_rev.on_view, pattern=f"^{REV_VIEW_PREFIX}\\d+$")
     )
 
     # === Existing-pending card ===
