@@ -33,6 +33,7 @@ from bccy_bot.handlers.admin import (
     settings_ui as adm_settings_handlers,
 )
 from bccy_bot.handlers.inviter import audit as inviter_audit
+from bccy_bot.handlers.user import recovery as recovery_handler
 from bccy_bot.repositories import application_repo, blacklist_repo
 from bccy_bot.services import audit_service, wizard_service
 from bccy_bot.services.wizard_service import CurrentStepInfo, WizardError
@@ -319,6 +320,7 @@ async def on_material_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     # 顺序消费各种 awaiting 状态
     consumers = (
         inviter_audit.consume_reject_reason_text,
+        recovery_handler.consume_recovery_key_text,
         adm_groups_handlers.consume_add_group_forward,
         adm_inviters_handlers.consume_add_inviter_text,
         adm_blacklist_handlers.consume_add_blacklist_text,

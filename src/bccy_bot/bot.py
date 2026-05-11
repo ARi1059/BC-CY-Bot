@@ -25,6 +25,7 @@ from bccy_bot.handlers.admin import (
 )
 from bccy_bot.handlers.common import chat_member as chat_member_handler
 from bccy_bot.handlers.inviter import audit as inviter_audit
+from bccy_bot.handlers.user import recovery as user_recovery
 from bccy_bot.handlers.user import wizard as wizard_handlers
 from bccy_bot.handlers.user.start import start_command
 from bccy_bot.keyboards.admin_callbacks import (
@@ -160,7 +161,7 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(wizard_handlers.on_start_apply, pattern=f"^{USER_START_APPLY}$"))
     application.add_handler(CallbackQueryHandler(wizard_handlers.on_help, pattern=f"^{USER_HELP}$"))
     application.add_handler(
-        CallbackQueryHandler(wizard_handlers.on_use_recovery_key_placeholder, pattern=f"^{USER_USE_RECOVERY_KEY}$")
+        CallbackQueryHandler(user_recovery.on_use_recovery_key, pattern=f"^{USER_USE_RECOVERY_KEY}$")
     )
 
     # === Existing-pending card ===
