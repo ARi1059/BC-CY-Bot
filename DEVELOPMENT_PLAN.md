@@ -24,7 +24,7 @@
 | M11 | 报销基础设施（5 张表 / migration / 设置项 / 资格列表 / 用户覆盖） | 1.5d | ✅ 已完成 | 2026-05-12 |
 | M12 | 用户侧报销 wizard（4 层预校验 + 引导提交 + 预览） | 1.5d | ✅ 已完成 | 2026-05-12 |
 | M13 | 管理员侧审核 + 口令红包转发（双消息 + 等待状态机） | 1.5d | ✅ 已完成 | 2026-05-12 |
-| M14 | 周报 / 月报 JobQueue + 报销管理 UI + 月预算重置 | 1d | ⬜ 未开始 | – |
+| M14 | 周报 / 月报 JobQueue + 报销管理 UI + 月预算重置 | 1d | ✅ 已完成 | 2026-05-12 |
 
 **v1 总计 17 工作日；v2 报销系统 5.5 工作日**
 
@@ -466,26 +466,30 @@ BC-CY-Bot/
 
 **验收**：✅ 142/142 单元测试通过（M13 新增 10）；94 handlers 注册；审核消息差异化（acting vs others）；月预算正确扣减；申请人收到口令；并发审核第二人被拒绝。
 
-### M14 周报/月报 + 报销管理 UI + 月预算重置（1 天）
+### M14 周报/月报 + 报销管理 UI + 月预算重置（1 天） ✅
 
 **目标**：自动化报表 + 完整的管理 UI + 预算定期重置。
 
-- [ ] services/reimbursement_reports_service.py
-  - [ ] generate_weekly_report(week_start, week_end) → str
-  - [ ] generate_monthly_report(month) → str
-  - [ ] 内容：申请数 / 各状态 / 总发放 / 月预算余 / 报销次数 Top
-- [ ] JobQueue：
-  - [ ] 每天 00:00 检查是否是预算重置日 → 重置 remaining = monthly_budget
-  - [ ] 周一 00:05 跑周报，私聊所有超管
-  - [ ] 月 1 日 00:10 跑月报
-- [ ] 管理面板补全：
-  - [ ] 待审核列表（pending）
-  - [ ] 待付款列表（approved 未 paid）+ "补发口令" 按钮
-  - [ ] 历史记录分页（最近 30 条）
-- [ ] 文档：TESTING.md 增加报销端到端清单（10+ 步）
-- [ ] 单元测试：报表生成 / 预算重置 / 用户冷却覆盖生效
+- [x] services/reimbursement_reports_service.py
+  - [x] generate_weekly_report_text / generate_monthly_report_text 返回 ready-to-send 字符串
+  - [x] 内容：申请数 / 5 种状态分布 / 总发放 / 月预算余 / 报销次数 Top 5
+  - [x] previous_week_range / previous_month_range（本地 TZ 计算 → UTC 查询）
+  - [x] maybe_reset_monthly_budget：当天是 reset_day 时把 monthly_remaining = monthly_budget
+  - [x] should_run_weekly_today / should_run_monthly_today（weekday/day=1 判定）
+- [x] JobQueue（在 _post_init 中注册）：
+  - [x] 每天 00:00:05 跑 `_reimbursement_budget_reset_job` → maybe_reset_monthly_budget
+  - [x] 每天 00:05:00 跑 `_reimbursement_weekly_report_job`，job 内部判周一后才推送
+  - [x] 每天 00:10:00 跑 `_reimbursement_monthly_report_job`，job 内部判每月 1 号后才推送
+  - [x] 周报/月报通过 `_dm` 私聊所有超级管理员；失败 retry 3 次
+- [x] 管理面板补全（handlers/admin/reimbursement.py 追加）：
+  - [x] 主面板新增 [📥 待审核] [💸 待付款] [📜 历史记录] 3 个按钮
+  - [x] on_pending_list：列出 pending，每条带 [👁 重发]（调用 audit_service.repost_materials）
+  - [x] on_approved_list：列出 approved 未 paid，每条带 [💸 补发口令]（重置 AWAIT_PAYMENT_CODE 状态）
+  - [x] on_history_list：最近 30 条，5 种状态图标
+- [x] TESTING.md：14.x 新章节，10+ 端到端步骤（初始化 / 4 层预校验 / wizard / 审核 / 拒绝 / 预算不足 / 冷却 / 待付款补发 / 历史 / 报表）
+- [x] 单元测试：6 个新用例（周报+月报内容 / 区间聚合 / 月预算重置 / 区间长度 / weekday-helper 类型）
 
-**验收**：模拟周报数据后跑 generate_weekly_report 返回正确文本；模拟当日为 reset_day 后跑 job → remaining 回到 monthly_budget；管理面板能看到 pending+approved 列表并补发口令。
+**验收**：✅ 148/148 单元测试通过（M14 新增 6）；99 handlers 注册；JobQueue 三任务挂载；管理员面板新增 3 个列表入口 + 补发口令路径；TESTING.md 报销 E2E 清单完备。
 
 ---
 
@@ -557,14 +561,14 @@ mypy = "*"
 
 ## 10. 当前下一步
 
-**☞ M13 ✅ 完成；下一步进入 M14（周报/月报 + 报销管理 UI + 月预算重置）**
+**☞ M14 ✅ 完成；v2 报销系统全量交付 —— v2.0.0 发布候选**
 
-v2 进度：M11 ✅ / M12 ✅ / M13 ✅ / M14 ⬜
+v2 进度：M11 ✅ / M12 ✅ / M13 ✅ / M14 ✅
 
-M14 启动顺序：
-1. 创建特性分支 `feature/M14-reimbursement-reports`
-2. 周报/月报 JobQueue + 月预算自动重置 + 管理面板"待审核/待付款/历史记录"补全
-3. 完成后合并到 main，发布 v1.1.0（v2 完成版）
+下一步：
+1. 在生产服务器 `git pull && docker compose up -d --build` 部署 v2
+2. 按 [TESTING.md §14](TESTING.md) 走报销系统 E2E 验收
+3. 验收通过后打 `v2.0.0` 标签
 
 v1.x 迭代候选（与 v2 并行可做）：
 - 回群密钥管理 UI（M5 占位）：完整的搜索 / 重置 / 撤销 / 历史查询
@@ -579,6 +583,12 @@ v1.x 迭代候选（与 v2 并行可做）：
 > 开发过程中的偏离决策、阻塞、关键判断在此追加。每条带日期。
 
 - `2026-05-12` 文档创建，与 REQUIREMENTS v1.0 对齐，未进入开发。
+- `2026-05-12` **M14 完成 —— v2 报销系统全部交付**。关键决策与发现：
+  - **时间窗口本地 TZ 计算 → UTC 查询**：previous_week/month_range 用 zoneinfo 算出本地周一/月初的 UTC 边界，避免按 UTC 直接切割导致跨天偏移。
+  - **JobQueue 用 run_daily + 内部 if 判定**：每天 00:05/00:10 都跑一次，job 内部 `should_run_weekly/monthly_today()` 决定要不要真做事，比直接 run_daily(days=(0,)) 跨 PTB 版本更稳。
+  - **补发口令复用 AWAIT_PAYMENT_CODE_KIND**：不重复实现一套"重置 await + 发文本"路径；按钮只负责把 reviewer 置回等待态，consume_payment_code_text 不变。
+  - **报表数据按 `submitted_at` 归属**：状态分布是看"该周/月提交的申请最终走向"。已发放金额按 `paid_at` 归属，更符合财务直觉（这周发了多少）。
+  - **`_dm` 用 telegram_retry 装饰器**：报表 DM 失败重试 3 次，整组报表互相独立 try/except 不影响其他 admin 推送。
 - `2026-05-12` **M13 完成 —— 报销审核与口令转发上线**。关键决策与发现：
   - **两阶段 approve**：approve_request_step1 只完成预算扣减+状态更新，返回 ApprovalIntent；handler 接住后 set_awaiting 等口令。两阶段拆分让"审核通过"与"发放口令"在数据层各自原子，5 分钟过期或 /cancel 都不会脏数据。
   - **超预算自动 reject**：approve_request_step1 内预算复检失败时直接 reject_request(is_budget_reject=True) 然后抛 AuditError；handler 看到错误就显示给审核者，状态已落 rejected。
@@ -676,5 +686,5 @@ v1.x 迭代候选（与 v2 并行可做）：
 
 ---
 
-**文档版本：v1.6（M13 完成 —— 报销审核与口令转发完成）**
+**文档版本：v2.0（M14 完成 —— v2 报销系统全量交付）**
 **最后更新：2026-05-12**

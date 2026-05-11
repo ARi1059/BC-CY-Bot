@@ -80,6 +80,13 @@ ADM_REI_OVERRIDES = "admin:rei:o"
 ADM_REI_OVERRIDE_ADD = "admin:rei:o:add"
 ADM_REI_OVERRIDE_REMOVE_PREFIX = "admin:rei:o:rm:"
 ADM_REI_OVERRIDE_REMOVE_CONFIRM_PREFIX = "admin:rei:o:rmc:"
+# Lists
+ADM_REI_PENDING_LIST = "admin:rei:plist"
+ADM_REI_APPROVED_LIST = "admin:rei:alist"
+ADM_REI_HISTORY_LIST = "admin:rei:hlist"
+# Per-row actions
+ADM_REI_RESEND_AUDIT_PREFIX = "admin:rei:rsau:"      # 重发审核材料
+ADM_REI_RESEND_PAYMENT_PREFIX = "admin:rei:rspay:"   # 补发口令（重置 await 状态）
 
 
 def parse_rei_elig_remove(d: str) -> int | None:
@@ -96,6 +103,14 @@ def parse_rei_override_remove(d: str) -> int | None:
 
 def parse_rei_override_remove_confirm(d: str) -> int | None:
     return _parse_int_suffix(d, ADM_REI_OVERRIDE_REMOVE_CONFIRM_PREFIX)
+
+
+def parse_rei_resend_audit(d: str) -> int | None:
+    return _parse_int_suffix(d, ADM_REI_RESEND_AUDIT_PREFIX)
+
+
+def parse_rei_resend_payment(d: str) -> int | None:
+    return _parse_int_suffix(d, ADM_REI_RESEND_PAYMENT_PREFIX)
 
 # === 占位（后续里程碑接管）===
 ADM_PENDING = "admin:pending"  # M3 已实现：跳到待审核列表

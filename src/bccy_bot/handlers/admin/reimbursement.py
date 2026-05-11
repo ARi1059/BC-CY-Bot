@@ -10,21 +10,28 @@ from bccy_bot.keyboards.admin_callbacks import (
     parse_rei_elig_remove_confirm,
     parse_rei_override_remove,
     parse_rei_override_remove_confirm,
+    parse_rei_resend_audit,
+    parse_rei_resend_payment,
 )
 from bccy_bot.keyboards.admin_factory import (
     eligibility_list_keyboard,
     eligibility_remove_confirm_keyboard,
     override_remove_confirm_keyboard,
     overrides_list_keyboard,
+    reimbursement_approved_list_keyboard,
+    reimbursement_history_keyboard,
     reimbursement_main_keyboard,
+    reimbursement_pending_list_keyboard,
     reimbursement_settings_keyboard,
 )
 from bccy_bot.repositories import (
     admin_repo,
     eligibility_chat_repo,
     reimbursement_override_repo,
+    reimbursement_repo,
     reimbursement_settings,
 )
+from bccy_bot.services import reimbursement_audit_service as rei_audit
 from bccy_bot.utils.awaiting import clear_awaiting, get_awaiting, set_awaiting
 from bccy_bot.utils.session import session_scope
 
@@ -550,3 +557,135 @@ async def consume_eligibility_forward(
 
     clear_awaiting(context, update.effective_user.id)
     return True
+
+
+# ---------- 待审核 / 待付款 / 历史记录 ----------
+
+
+def _format_request_row(r) -> str:
+    name = f"@{r.applicant_username}" if r.applicant_username else f"#{r.applicant_telegram_id}"
+    amt = reimbursement_settings.cents_to_yuan_display(r.amount_cents)
+    when = (
+        r.submitted_at.strftime("%m-%d %H:%M") if r.submitted_at else "—"
+    )
+    return f"#R{r.id} · {name} · {amt} 元 · {when}"
+
+
+async def on_pending_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await ack(update)
+    is_admin, _ = await require_admin(update, context)
+    if not is_admin:
+        return
+    async with session_scope(context) as session:
+        rows = await reimbursement_repo.list_pending(session)
+    text_lines = [f"📥 待审核报销（{len(rows)} 条）", "─────────────────────────"]
+    if not rows:
+        text_lines.append("\n暂无待审核报销。")
+    else:
+        for r in rows[:20]:
+            text_lines.append(f"• {_format_request_row(r)}")
+    await edit_or_reply(
+        update,
+        "\n".join(text_lines),
+        reply_markup=reimbursement_pending_list_keyboard(rows),
+    )
+
+
+async def on_approved_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await ack(update)
+    is_admin, _ = await require_admin(update, context)
+    if not is_admin:
+        return
+    async with session_scope(context) as session:
+        rows = await reimbursement_repo.list_approved_unpaid(session)
+    text_lines = [f"💸 待付款报销（{len(rows)} 条）", "─────────────────────────"]
+    if not rows:
+        text_lines.append("\n暂无待付款报销。")
+    else:
+        for r in rows[:20]:
+            text_lines.append(f"• {_format_request_row(r)}")
+    await edit_or_reply(
+        update,
+        "\n".join(text_lines),
+        reply_markup=reimbursement_approved_list_keyboard(rows),
+    )
+
+
+async def on_history_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await ack(update)
+    is_admin, _ = await require_admin(update, context)
+    if not is_admin:
+        return
+    async with session_scope(context) as session:
+        rows = await reimbursement_repo.list_recent(session, limit=30)
+    text_lines = [f"📜 报销历史记录（最近 {len(rows)} 条）", "─────────────────────────"]
+    if not rows:
+        text_lines.append("\n暂无记录。")
+    else:
+        for r in rows:
+            status_label = {
+                "wizard": "📝", "pending": "🕐", "approved": "✅",
+                "rejected": "❌", "cancelled": "⏹", "paid": "💸",
+            }.get(r.status, "•")
+            text_lines.append(f"{status_label} {_format_request_row(r)} · {r.status}")
+    await edit_or_reply(update, "\n".join(text_lines), reply_markup=reimbursement_history_keyboard())
+
+
+# ---------- 按行 action：重发审核材料 / 补发口令 ----------
+
+
+async def on_resend_audit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """从「待审核」列表点击 → 重发审核材料给当前管理员。"""
+    await ack(update)
+    is_admin, _ = await require_admin(update, context)
+    if not is_admin or update.callback_query is None or update.effective_user is None:
+        return
+    rei_id = parse_rei_resend_audit(update.callback_query.data or "")
+    if rei_id is None:
+        return
+    async with session_scope(context) as session:
+        from bccy_bot.db.models.reimbursement_request import ReimbursementRequest
+
+        r = await session.get(ReimbursementRequest, rei_id)
+        if r is None:
+            await edit_or_reply(update, "⚠️ 报销不存在。")
+            return
+        await rei_audit.repost_materials(
+            session, context.bot, r, requester_telegram_id=update.effective_user.id
+        )
+
+
+async def on_resend_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """从「待付款」列表点击 → 设置 await 状态等管理员发口令。"""
+    from bccy_bot.db.models.enums import REI_STATUS_APPROVED
+    from bccy_bot.db.models.reimbursement_request import ReimbursementRequest
+    from bccy_bot.handlers.admin.reimbursement_audit import AWAIT_PAYMENT_CODE_KIND
+
+    await ack(update)
+    is_admin, _ = await require_admin(update, context)
+    if not is_admin or update.callback_query is None or update.effective_user is None:
+        return
+    rei_id = parse_rei_resend_payment(update.callback_query.data or "")
+    if rei_id is None:
+        return
+    async with session_scope(context) as session:
+        r = await session.get(ReimbursementRequest, rei_id)
+        if r is None:
+            await edit_or_reply(update, "⚠️ 报销不存在。")
+            return
+        if r.status != REI_STATUS_APPROVED:
+            await edit_or_reply(update, f"⚠️ 报销当前状态为 {r.status}，不在'已批准待付款'。")
+            return
+
+    set_awaiting(
+        context,
+        update.effective_user.id,
+        AWAIT_PAYMENT_CODE_KIND,
+        {"reimbursement_id": rei_id},
+    )
+    await edit_or_reply(
+        update,
+        f"💸 请发送 #R{rei_id} 的支付宝口令红包文本。\n"
+        "Bot 将自动转发给申请人。\n"
+        "（发送 /cancel 放弃；状态保留为'已批准待付款'，下次可继续补发。）",
+    )
