@@ -64,4 +64,6 @@ async def on_chat_member_update(update: Update, context: ContextTypes.DEFAULT_TY
             invite_link_name=invite_link.name,
             joined_user_id=joined_user.id,
             chat_telegram_id=chat.id,
+            bot=context.bot,
+            joined_username=joined_user.username,
         )

@@ -15,7 +15,7 @@
 | M3 | 代审型路由（多管理员行锁） | 1d | ✅ 已完成 | 2026-05-12 |
 | M4 | 链接使用追踪 + chat_member 监听 | 1d | ✅ 已完成 | 2026-05-12 |
 | M5 | 管理员面板（含主/副分层 + 系统配置） | 2d | ✅ 已完成 | 2026-05-12 |
-| M6 | 日志频道（5 类事件卡片） | 1d | ⬜ 未开始 | – |
+| M6 | 日志频道（5 类事件卡片） | 1d | ✅ 已完成 | 2026-05-12 |
 | M7 | 出击报告频道（仅转发报告） | 1d | ⬜ 未开始 | – |
 | M8 | 回群密钥（含原账号清理） | 2d | ⬜ 未开始 | – |
 | M9 | 邀请人面板 `/panel` + 统计报表 | 1d | ⬜ 未开始 | – |
@@ -264,22 +264,25 @@ BC-CY-Bot/
 
 ---
 
-### M6 日志频道（1 天）
+### M6 日志频道（1 天） ✅
 
 **目标**：5 类事件卡片实时推送到日志频道。
 
-- [ ] `services/log_channel_service.py` —— 统一卡片渲染 + 推送
-- [ ] 5 类事件接入：
-  - [ ] 📥 新申请 → M1 末尾触发
-  - [ ] ✅ 审核通过 → M2 通过流程触发
-  - [ ] ❌ 审核拒绝 → M2 拒绝流程触发
-  - [ ] 🚪 链接已使用 → M4 chat_member 事件触发
-  - [ ] ⚠️ 异常告警 → M4 异常分支 + M8 密钥异常 + M5 各类失败
-- [ ] 频道未配置时静默跳过 + 管理员面板顶部提示
-- [ ] 推送带 `disable_notification=true`
-- [ ] 失败重试 3 次
+- [x] `services/log_channel_service.py` —— 统一卡片渲染 + `_safe_push` 入口（频道未配置静默跳过；失败 retry 3 次后写错误日志，不抛）
+- [x] 5+1 类事件接入：
+  - [x] 📥 新申请 → `audit_service.notify_reviewers` 起点触发
+  - [x] ✅ 审核通过 → `approve_application` 完成后
+  - [x] ❌ 审核拒绝 → `reject_application` 完成后
+  - [x] 🚪 链接已使用 → `link_tracking_service.on_member_joined` 正常路径
+  - [x] ⚠️ 异常告警（入群） → `on_member_joined` 异常路径
+  - [x] ⚠️ 链接过期 → `sweep_expired` 标记后
+- [x] 频道未配置：返回 False + structlog INFO，不阻塞主流程
+- [x] 邀请链接 URL 在卡片中脱敏（前 4 位 + ****）
+- [x] 推送带 `disable_notification=True` + `disable_web_page_preview=True`
+- [x] 失败重试 3 次（复用 `utils/retry.telegram_retry`）
+- [x] 测试：9 个新用例覆盖 5 类卡片、未配置跳过、非法 channel_id 容错
 
-**验收**：5 种事件都能在频道看到对应卡片，格式与 [REQ §3.6.3](REQUIREMENTS.md) 一致。
+**验收**：✅ 70/70 单元测试通过（M6 新增 9）；6 个事件 hook 全部接入；audit_service / link_tracking_service 增加日志频道推送但出错不回滚主流程。
 
 ---
 
@@ -434,12 +437,12 @@ mypy = "*"
 
 ## 10. 当前下一步
 
-**☞ M5 ✅ 完成。等待用户确认即可进入 M6（日志频道推送）**
+**☞ M6 ✅ 完成。等待用户确认即可进入 M7（出击报告频道转发）**
 
-M6 启动时执行：
-1. 创建特性分支 `feature/M6-log-channel`
-2. 接管 M2/M3/M4 已留的 `TODO(M6)` 占位，把 5 类事件推送到频道
-3. 完成后合并到 main，进入 M7
+M7 启动时执行：
+1. 创建特性分支 `feature/M7-attack-report`
+2. 在 approve 流程中 forwardMessage 出击报告到独立频道
+3. 完成后合并到 main，进入 M8
 
 ---
 
@@ -448,6 +451,13 @@ M6 启动时执行：
 > 开发过程中的偏离决策、阻塞、关键判断在此追加。每条带日期。
 
 - `2026-05-12` 文档创建，与 REQUIREMENTS v1.0 对齐，未进入开发。
+- `2026-05-12` **M6 完成**。关键决策与发现：
+  - **每个事件 hook 独立 try/except**：不让日志频道失败拖累主流程（pending/approved/rejected/link_used 都是关键路径状态变更）。
+  - **链接 URL 脱敏**：`https://t.me/+ABCDEFG` → `https://t.me/+ABCD****`，平衡可追溯（前缀可对）与防外泄（完整码不暴露）。
+  - **link_tracking 服务增加 bot 参数（可选）**：保持单元测试不依赖 bot 时可不传，handler/JobQueue 传入触发频道推送。
+  - **structlog 保留字 `event` 坑**：log.info('msg', event=kind) 与 structlog 内部的第一个位置参数冲突，改用 `kind=` 关键字。
+  - **FakeBot 增加 `**kwargs`**：实际 Bot.send_message 有 disable_notification 等 7-8 个可选 kwargs，测试 mock 不能漏；改成 `**kwargs` 一劳永逸。
+  - **数据库时间戳判定**：log_channel 推送时优先用 application.submitted_at；若空兜底 _now_str()。
 - `2026-05-12` **M5 完成**。关键决策与发现：
   - **callback_data 短码命名**：admin scope 大量按钮（10+ 模块 × N 操作）容易超 64 字节，统一短前缀（如 `admin:inv:ag:<id>` 而非 `admin:inviters:add_pick_group:<id>`），命名空间集中在 admin_callbacks.py。
   - **多步输入用 awaiting 状态字典**：抽出 `utils/awaiting.py` 为各模块共用：set/get/clear + update_data；状态进程退出即丢，可接受。
@@ -492,5 +502,5 @@ M6 启动时执行：
 
 ---
 
-**文档版本：v0.7（M5 完成）**
+**文档版本：v0.8（M6 完成）**
 **最后更新：2026-05-12**

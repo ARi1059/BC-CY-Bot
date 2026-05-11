@@ -122,11 +122,11 @@ async def _post_init(application: Application) -> None:
 
 
 async def _sweep_expired_links_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """JobQueue 回调：扫描标记过期链接。"""
+    """JobQueue 回调：扫描标记过期链接 + 推送日志频道。"""
     factory = get_session_factory(context)
     async with factory() as session:
         try:
-            expired = await link_tracking_service.sweep_expired(session)
+            expired = await link_tracking_service.sweep_expired(session, bot=context.bot)
             await session.commit()
             if expired:
                 log.info("expired_link_sweep_done", marked=len(expired))
