@@ -71,3 +71,41 @@ def parse_inviters_page(data: str) -> int | None:
         return int(data[len(USER_INVITERS_PAGE_PREFIX):])
     except ValueError:
         return None
+
+
+# === Inviter actions（审核侧 callback） ===
+
+INVITER_APPROVE_PREFIX = f"{SCOPE_INVITER}:approve:"          # + app_id
+INVITER_REJECT_PREFIX = f"{SCOPE_INVITER}:reject:"            # + app_id
+INVITER_REJECT_REASON_PREFIX = f"{SCOPE_INVITER}:reject_reason:"  # + app_id
+INVITER_REJECT_SKIP_PREFIX = f"{SCOPE_INVITER}:reject_skip:"  # + app_id
+INVITER_VIEW_MATERIALS_PREFIX = f"{SCOPE_INVITER}:view_materials:"  # + app_id
+
+
+def _parse_with_prefix(data: str, prefix: str) -> int | None:
+    if not data.startswith(prefix):
+        return None
+    try:
+        return int(data[len(prefix):])
+    except ValueError:
+        return None
+
+
+def parse_approve(data: str) -> int | None:
+    return _parse_with_prefix(data, INVITER_APPROVE_PREFIX)
+
+
+def parse_reject(data: str) -> int | None:
+    return _parse_with_prefix(data, INVITER_REJECT_PREFIX)
+
+
+def parse_reject_reason(data: str) -> int | None:
+    return _parse_with_prefix(data, INVITER_REJECT_REASON_PREFIX)
+
+
+def parse_reject_skip(data: str) -> int | None:
+    return _parse_with_prefix(data, INVITER_REJECT_SKIP_PREFIX)
+
+
+def parse_view_materials(data: str) -> int | None:
+    return _parse_with_prefix(data, INVITER_VIEW_MATERIALS_PREFIX)

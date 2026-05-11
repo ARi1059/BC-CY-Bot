@@ -11,7 +11,7 @@
 |:----:|------|:---:|:----:|------|
 | M0 | 项目脚手架 + DB schema + 配置 + Keyboard 工厂 | 1.5d | ✅ 已完成 | 2026-05-12 |
 | M1 | 申请人引导式流程（禁媒体组 / 逐项 / 预览） | 2.5d | ✅ 已完成 | 2026-05-12 |
-| M2 | 邀请人审核（双消息 / 通过-拒绝 / 一次性链接） | 2.5d | ⬜ 未开始 | – |
+| M2 | 邀请人审核（双消息 / 通过-拒绝 / 一次性链接） | 2.5d | ✅ 已完成 | 2026-05-12 |
 | M3 | 代审型路由（多管理员行锁） | 1d | ⬜ 未开始 | – |
 | M4 | 链接使用追踪 + chat_member 监听 | 1d | ⬜ 未开始 | – |
 | M5 | 管理员面板（含主/副分层 + 系统配置） | 2d | ⬜ 未开始 | – |
@@ -170,32 +170,32 @@ BC-CY-Bot/
 
 ---
 
-### M2 邀请人审核流程（2.5 天）
+### M2 邀请人审核流程（2.5 天） ✅
 
 **目标**：审核者收到双消息推送，点通过 → 申请人收到一次性链接 + 回群密钥；点拒绝 → 申请人收到通知。
 
-- [ ] `services/audit_service.py` —— 收到 pending 申请后路由：
-  - [ ] inviter.review_mode='self' → 推送给该邀请人
-  - [ ] inviter.review_mode='admin_delegated' → 暂存，等 M3 接管
-- [ ] **双消息推送**（严格 [REQ §3.2.1](REQUIREMENTS.md)）：
-  - [ ] 消息 ①：`sendMediaGroup`（约课记录 + 上课手势），首图 caption=出击报告
-  - [ ] caption > 1024 字符时降级三条消息
-  - [ ] 消息 ②：申请人元信息 + `[✅ 通过] [❌ 拒绝] [👁 重发审核材料]`
-  - [ ] 两条消息的 message_id 都存入 application（便于后续编辑）
-- [ ] **通过流程**：
-  - [ ] `services/invite_link_service.py`：调 `createChatInviteLink`（取 settings 的 ttl）
-  - [ ] `services/recovery_key_service.py`：生成密钥（首次通过才生成）
-  - [ ] 私聊申请人：链接 + 密钥卡片 + 复制按钮
-  - [ ] 编辑消息 ② 为「✅ 已通过 by @xxx · HH:MM」
-  - [ ] 写 audit_logs
-- [ ] **拒绝流程**：
-  - [ ] 询问"是否填写原因？" `[✏️ 填写] [⏩ 跳过]`
-  - [ ] 填写时进入子对话等用户文本
-  - [ ] 通知申请人 + 编辑消息 ②
-- [ ] `utils/retry.py`：Telegram API 重试装饰器
-- [ ] 集成测试：完整审核流（pending → approved/rejected）
+- [x] `services/audit_service.py` —— 路由：
+  - [x] inviter.review_mode='self' → 推送给该邀请人
+  - [x] inviter.review_mode='admin_delegated' → 占位日志，M3 接管（已留 TODO）
+- [x] **双消息推送**（严格 [REQ §3.2.1](REQUIREMENTS.md)）：
+  - [x] 消息 ①：`sendMediaGroup`（约课记录 + 上课手势），首图 caption=出击报告
+  - [x] caption > 1024 字符时降级三条消息（媒体组无 caption + 独立报告 + 按钮）
+  - [x] 消息 ②：申请人元信息 + `[✅ 通过] [❌ 拒绝] [👁 重发审核材料]`
+  - [x] message_id 存入 `audit_messages` 表（新增，支持多审核者 = M3 顺延扩展）
+- [x] **通过流程**：
+  - [x] `services/invite_link_service.py`：调 `createChatInviteLink`（取 settings 的 ttl，clamp 1–168）
+  - [x] `services/recovery_key_service.py`：生成 BCCY-XXXX-XXXX-XXXX-XXXX 密钥 + Argon2id 哈希 + 幂等签发
+  - [x] 私聊申请人：链接 URL 按钮 + 密钥卡片
+  - [x] 编辑消息 ② 为「✅ 已通过 by @xxx · HH:MM」
+  - [x] 写 audit_logs
+- [x] **拒绝流程**：
+  - [x] 询问"是否填写原因？" `[✏️ 填写] [⏩ 跳过]`
+  - [x] 填写：bot_data 状态机 + 消息分发器优先消费拒绝原因文本
+  - [x] 通知申请人 + 编辑消息 ②（含原因）
+- [x] `utils/retry.py`：Telegram API 重试装饰器（RetryAfter / TimedOut / NetworkError）
+- [x] 集成测试：16 个新增用例（recovery_key 8 + audit_service 8）覆盖双消息/长报告降级/代审跳过/通过/拒绝带原因/重复处理拒收
 
-**验收**：管理员侧能看到两条消息（含 caption）；点通过后申请人收到链接 + 密钥；点拒绝后申请人收到通知；DB 状态正确。
+**验收**：✅ 35/35 单元测试通过（M1 19 + M2 16）；21 个 handler 注册；audit_messages 新表 + migration 已生效。
 
 ---
 
@@ -425,12 +425,12 @@ mypy = "*"
 
 ## 10. 当前下一步
 
-**☞ M1 ✅ 完成。等待用户确认即可进入 M2（邀请人审核流程）**
+**☞ M2 ✅ 完成。等待用户确认即可进入 M3（代审型路由）**
 
-M2 启动时执行：
-1. 创建特性分支 `feature/M2-audit`
-2. 按 §4 M2 任务清单逐项打勾推进
-3. 完成后合并到 main，进入 M3
+M3 启动时执行：
+1. 创建特性分支 `feature/M3-delegated`
+2. 按 §4 M3 任务清单逐项打勾推进（在 audit_service 中实现广播 + 行锁）
+3. 完成后合并到 main，进入 M4
 
 ---
 
@@ -439,6 +439,13 @@ M2 启动时执行：
 > 开发过程中的偏离决策、阻塞、关键判断在此追加。每条带日期。
 
 - `2026-05-12` 文档创建，与 REQUIREMENTS v1.0 对齐，未进入开发。
+- `2026-05-12` **M2 完成**。关键决策与发现：
+  - **新增 audit_messages 表**：原 plan 把 message_id 计划存 applications 列上，但代审型每个管理员一行更自然，独立表从一开始就支持 M3 多审核者扩展。
+  - **拒绝原因输入采用 bot_data 状态字典**：在 `awaiting_reject_reasons[reviewer_id] = app_id` 中临时记录；进程重启即丢失，可接受（reviewer 可重新点拒绝）。落 DB 在 M2 阶段被判定为过度工程。
+  - **消息分发优先级**：on_material_message 头部加入 `consume_reject_reason_text` 短路逻辑，确保审核者在等待原因时不会被 wizard handler 抢消息。
+  - **audit_service 容错策略**：notify_reviewers 失败不回滚 status='pending'（避免用户被卡住），仅 log；后续可由 inviter `/panel` 主动重发。
+  - **TTL clamp**：invite_link_service 强制 1–168 小时（即使 settings 表配置异常也不至于生成永久或负数 TTL 链接）。
+  - **FakeBot 模式**：测试隔离 Telegram API 用一个 ~80 行的 FakeBot dataclass，记录 sent_media/sent_texts/edited/created_links。比 unittest.mock 更易读，断言细节更直观。
 - `2026-05-12` **M1 完成**。关键决策与发现：
   - **wizard_step 编码**：0=选邀请人，i∈[1,N]=等待第 i 项材料，N+1=预览。N 来自 inviter.required_materials 长度（每个邀请人可配不同材料组合）。
   - **服务层零 Telegram 依赖**：wizard_service 入参全部用 plain Python 类型（含 `original_message_id: int`），便于单测；handler 层负责从 PTB Update 拆解再灌进来。
@@ -455,5 +462,5 @@ M2 启动时执行：
 
 ---
 
-**文档版本：v0.3（M1 完成）**
+**文档版本：v0.4（M2 完成）**
 **最后更新：2026-05-12**

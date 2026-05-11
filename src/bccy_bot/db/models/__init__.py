@@ -5,6 +5,7 @@ from bccy_bot.db.models.application import Application
 from bccy_bot.db.models.application_material import ApplicationMaterial
 from bccy_bot.db.models.attack_report_forward import AttackReportForward
 from bccy_bot.db.models.audit_log import AuditLog
+from bccy_bot.db.models.audit_message import AuditMessage
 from bccy_bot.db.models.blacklist import Blacklist
 from bccy_bot.db.models.group import Group
 from bccy_bot.db.models.invite_link import InviteLink
@@ -20,6 +21,7 @@ __all__ = [
     "ApplicationMaterial",
     "AttackReportForward",
     "AuditLog",
+    "AuditMessage",
     "Blacklist",
     "Group",
     "InviteLink",
