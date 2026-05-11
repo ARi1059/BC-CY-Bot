@@ -28,6 +28,89 @@ async def is_super_admin(session: AsyncSession, telegram_user_id: int) -> bool:
     return result.scalar_one_or_none() is not None
 
 
+async def find_by_telegram_user_id(session: AsyncSession, telegram_user_id: int) -> Admin | None:
+    result = await session.execute(
+        select(Admin).where(Admin.telegram_user_id == telegram_user_id).limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_super_admin(session: AsyncSession) -> Admin | None:
+    result = await session.execute(select(Admin).where(Admin.role == ROLE_SUPER).limit(1))
+    return result.scalar_one_or_none()
+
+
+async def add_sub_admin(
+    session: AsyncSession,
+    *,
+    telegram_user_id: int,
+    display_name: str | None,
+    added_by: int | None,
+) -> Admin:
+    a = Admin(
+        telegram_user_id=telegram_user_id,
+        display_name=display_name,
+        role=ROLE_SUB,
+        added_by=added_by,
+    )
+    session.add(a)
+    await session.flush()
+    session.add(
+        AuditLog(
+            actor_telegram_id=None if added_by is None else None,  # 由调用方填
+            actor_role="super_admin",
+            action="add_sub_admin",
+            details={"telegram_user_id": telegram_user_id, "admin_id": a.id},
+        )
+    )
+    return a
+
+
+async def remove_sub_admin(session: AsyncSession, admin: Admin, *, by_super_telegram_id: int) -> None:
+    if admin.role == ROLE_SUPER:
+        raise ValueError("cannot remove super admin via this API")
+    session.add(
+        AuditLog(
+            actor_telegram_id=by_super_telegram_id,
+            actor_role="super_admin",
+            action="remove_sub_admin",
+            details={"telegram_user_id": admin.telegram_user_id, "admin_id": admin.id},
+        )
+    )
+    await session.delete(admin)
+    await session.flush()
+
+
+async def transfer_super_admin(
+    session: AsyncSession,
+    *,
+    new_super: Admin,
+    current_super: Admin,
+    by_telegram_id: int,
+) -> None:
+    """超级管理员转让：current_super 降级为 sub，new_super 提升为 super。"""
+    if current_super.id == new_super.id:
+        raise ValueError("source equals target")
+    if new_super.role == ROLE_SUPER:
+        raise ValueError("target already super")
+    # 先降级当前 super，避免触犯 uq_one_super_admin 部分唯一索引
+    current_super.role = ROLE_SUB
+    await session.flush()
+    new_super.role = ROLE_SUPER
+    await session.flush()
+    session.add(
+        AuditLog(
+            actor_telegram_id=by_telegram_id,
+            actor_role="super_admin",
+            action="transfer_super_admin",
+            details={
+                "from_telegram_id": current_super.telegram_user_id,
+                "to_telegram_id": new_super.telegram_user_id,
+            },
+        )
+    )
+
+
 async def ensure_initial_super_admin(session: AsyncSession, env_super_id: int) -> dict:
     """
     幂等地维护"初始超级管理员"：
