@@ -40,7 +40,7 @@ from bccy_bot.keyboards.factory import (
     audit_keyboard,
     reject_choice_keyboard,
 )
-from bccy_bot.repositories import application_repo, inviter_repo
+from bccy_bot.repositories import admin_repo, application_repo, inviter_repo
 from bccy_bot.services import invite_link_service, recovery_key_service
 from bccy_bot.utils.retry import telegram_retry
 
@@ -168,12 +168,34 @@ async def notify_reviewers(session: AsyncSession, bot: Bot, application: Applica
         return
 
     if inviter.review_mode == REVIEW_MODE_DELEGATED:
-        # TODO(M3)：广播给所有管理员，使用 DB 行锁防并发审核
-        log.info(
-            "delegated_review_pending_m3",
-            application_id=application.id,
-            inviter_id=inviter.id,
-        )
+        admins = await admin_repo.list_all(session)
+        if not admins:
+            log.warning(
+                "delegated_review_no_admins",
+                application_id=application.id,
+                inviter_id=inviter.id,
+            )
+            return
+
+        for adm in admins:
+            try:
+                await _push_to_reviewer(
+                    session,
+                    bot,
+                    application=application,
+                    reviewer_chat_id=adm.telegram_user_id,
+                    photos=photos,
+                    report_text=report_text,
+                    summary_text=summary,
+                )
+            except BadRequest as e:
+                # 某个管理员阻断了 Bot —— 跳过，其他管理员仍能审核
+                log.warning(
+                    "delegated_push_failed_for_admin",
+                    application_id=application.id,
+                    admin_telegram_id=adm.telegram_user_id,
+                    err=str(e),
+                )
         return
 
 
@@ -456,6 +478,11 @@ async def _edit_audit_messages(
     is_approved: bool,
     reject_reason: str | None = None,
 ) -> None:
+    """
+    审核终态时编辑所有审核消息 ②：
+    - 真正操作的审核者（acting）那条 → 「✅ 已通过 by @xxx · HH:MM」
+    - 其他审核者（代审型多管理员） → 「⏩ 已被 @xxx 处理」
+    """
     result = await session.execute(
         select(AuditMessage).where(AuditMessage.application_id == application_id)
     )
@@ -465,15 +492,19 @@ async def _edit_audit_messages(
     actor = reviewer_display or f"#{reviewer_telegram_id}"
 
     if is_approved:
-        marker = f"✅ 已通过 by {actor} · {now}"
+        acting_marker = f"✅ 已通过 by {actor} · {now}"
     else:
-        marker = f"❌ 已拒绝 by {actor} · {now}"
+        acting_marker = f"❌ 已拒绝 by {actor} · {now}"
         if reject_reason:
-            marker += f"\n原因：{reject_reason}"
+            acting_marker += f"\n原因：{reject_reason}"
+
+    others_marker = f"⏩ 已被 {actor} 处理 · {now}"
 
     for am in audit_messages:
+        is_acting = am.reviewer_telegram_id == reviewer_telegram_id
+        text = acting_marker if is_acting else others_marker
         try:
-            await _edit_text(bot, am.reviewer_telegram_id, am.text_message_id, marker)
+            await _edit_text(bot, am.reviewer_telegram_id, am.text_message_id, text)
         except BadRequest as e:
             log.warning(
                 "audit_msg_edit_failed",

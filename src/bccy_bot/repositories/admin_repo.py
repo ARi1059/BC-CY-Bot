@@ -6,6 +6,28 @@ from bccy_bot.db.models.audit_log import AuditLog
 from bccy_bot.db.models.enums import ROLE_SUB, ROLE_SUPER
 
 
+async def list_all(session: AsyncSession) -> list[Admin]:
+    """所有管理员（super + sub），按 id 升序。代审型审核广播用。"""
+    result = await session.execute(select(Admin).order_by(Admin.id))
+    return list(result.scalars().all())
+
+
+async def is_admin(session: AsyncSession, telegram_user_id: int) -> bool:
+    result = await session.execute(
+        select(Admin.id).where(Admin.telegram_user_id == telegram_user_id).limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def is_super_admin(session: AsyncSession, telegram_user_id: int) -> bool:
+    result = await session.execute(
+        select(Admin.id)
+        .where(Admin.telegram_user_id == telegram_user_id, Admin.role == ROLE_SUPER)
+        .limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
 async def ensure_initial_super_admin(session: AsyncSession, env_super_id: int) -> dict:
     """
     幂等地维护"初始超级管理员"：

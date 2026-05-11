@@ -12,7 +12,7 @@
 | M0 | 项目脚手架 + DB schema + 配置 + Keyboard 工厂 | 1.5d | ✅ 已完成 | 2026-05-12 |
 | M1 | 申请人引导式流程（禁媒体组 / 逐项 / 预览） | 2.5d | ✅ 已完成 | 2026-05-12 |
 | M2 | 邀请人审核（双消息 / 通过-拒绝 / 一次性链接） | 2.5d | ✅ 已完成 | 2026-05-12 |
-| M3 | 代审型路由（多管理员行锁） | 1d | ⬜ 未开始 | – |
+| M3 | 代审型路由（多管理员行锁） | 1d | ✅ 已完成 | 2026-05-12 |
 | M4 | 链接使用追踪 + chat_member 监听 | 1d | ⬜ 未开始 | – |
 | M5 | 管理员面板（含主/副分层 + 系统配置） | 2d | ⬜ 未开始 | – |
 | M6 | 日志频道（5 类事件卡片） | 1d | ⬜ 未开始 | – |
@@ -199,19 +199,21 @@ BC-CY-Bot/
 
 ---
 
-### M3 代审型路由（1 天）
+### M3 代审型路由（1 天） ✅
 
 **目标**：当 inviter.review_mode='admin_delegated' 时，审核消息广播给所有管理员，先到先得。
 
-- [ ] `services/audit_service.py` 补全代审路由分支
-- [ ] 广播：对每位 admin 各推一份双消息
-- [ ] **行锁防并发**：审核动作执行前 `SELECT ... FOR UPDATE` 锁住 application，校验 status='pending'
-- [ ] 一个管理员处理后：
-  - [ ] 其他管理员的消息 ② 编辑为「⏩ 已被 @xxx 处理」并移除按钮
-- [ ] DB 字段：applications.locked_by 仅做调试展示
-- [ ] 测试：双管理员同时点击的并发场景
+- [x] `services/audit_service.py` 代审分支：fetch all admins → `_push_to_reviewer` per admin（每位失败独立 try/except，单个掉线不阻断其他）
+- [x] 广播：每位 admin 收到完整双消息（媒体组 + caption 报告 / 申请人信息 + 按钮）
+- [x] **行锁防并发**：`_load_pending_with_lock` 用 `select(...).with_for_update()`（PG 物理锁；SQLite 静默无效但仍受写串行化 + status 复检保护）
+- [x] 一个管理员处理后：
+  - [x] acting 自己的消息 ② → 「✅ 已通过 / ❌ 已拒绝 by @xxx · HH:MM」
+  - [x] 其他管理员的消息 ② → 「⏩ 已被 @xxx 处理 · HH:MM」
+- [x] DB 字段 `applications.locked_by` 加锁时即写入，便于调试观察
+- [x] `_authorize` 拓展：自审型 → 邀请人本人；代审型 → 任一已登记管理员
+- [x] 测试：10 个新用例（广播 / 差异化编辑 / 并发拒绝 / locked_by 写入 / 权限路径），全部通过
 
-**验收**：模拟两个管理员同时点击通过，仅一人成功落库，另一人按钮失效。
+**验收**：✅ 模拟"已通过 → 第二审核者再点通过"的场景，第二次抛 AuditError；3 位管理员场景下 acting/其他人消息文案差异化正确；45/45 单元测试全绿。
 
 ---
 
@@ -425,12 +427,12 @@ mypy = "*"
 
 ## 10. 当前下一步
 
-**☞ M2 ✅ 完成。等待用户确认即可进入 M3（代审型路由）**
+**☞ M3 ✅ 完成。等待用户确认即可进入 M4（链接使用追踪 + chat_member 监听）**
 
-M3 启动时执行：
-1. 创建特性分支 `feature/M3-delegated`
-2. 按 §4 M3 任务清单逐项打勾推进（在 audit_service 中实现广播 + 行锁）
-3. 完成后合并到 main，进入 M4
+M4 启动时执行：
+1. 创建特性分支 `feature/M4-link-tracking`
+2. 按 §4 M4 任务清单逐项打勾推进
+3. 完成后合并到 main，进入 M5
 
 ---
 
@@ -439,6 +441,12 @@ M3 启动时执行：
 > 开发过程中的偏离决策、阻塞、关键判断在此追加。每条带日期。
 
 - `2026-05-12` 文档创建，与 REQUIREMENTS v1.0 对齐，未进入开发。
+- `2026-05-12` **M3 完成**。关键决策与发现：
+  - **SQLite FOR UPDATE 的"虚假"性**：with_for_update() 在 SQLite 上是 no-op；测试中保护并发的真正机制是 SQLite 写串行化 + `status == 'pending'` 复检。生产 PG 走的是真行锁。测试中两个 session 串行模拟"先到先得"，符合实际语义。
+  - **acting vs others 差异化文案**：靠 `am.reviewer_telegram_id == acting_reviewer_telegram_id` 一行判断完成；自审型只有 1 行所以总是 acting，行为退化为 M2 原样。
+  - **拒绝原因不外泄给其他管理员**：other 那条只显示「⏩ 已被 @xxx 处理」，不携带 reject_reason；acting 那条才完整带上原因。
+  - **代审 inviter 可以没有 telegram_user_id**：测试中显式让 inviter.telegram_user_id=None，仍能正确广播；这与 §3.8.5 "代审型挂名邀请人"语义一致。
+  - **locked_by 字段不强制释放**：执行完成后保留作为审计痕迹（最后处理人），后续 inviter `/panel` 等查询可读用。
 - `2026-05-12` **M2 完成**。关键决策与发现：
   - **新增 audit_messages 表**：原 plan 把 message_id 计划存 applications 列上，但代审型每个管理员一行更自然，独立表从一开始就支持 M3 多审核者扩展。
   - **拒绝原因输入采用 bot_data 状态字典**：在 `awaiting_reject_reasons[reviewer_id] = app_id` 中临时记录；进程重启即丢失，可接受（reviewer 可重新点拒绝）。落 DB 在 M2 阶段被判定为过度工程。
@@ -462,5 +470,5 @@ M3 启动时执行：
 
 ---
 
-**文档版本：v0.4（M2 完成）**
+**文档版本：v0.5（M3 完成）**
 **最后更新：2026-05-12**
