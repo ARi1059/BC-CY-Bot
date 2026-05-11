@@ -1,23 +1,16 @@
-"""基础统计：申请总数 / 各状态分布 / 链接使用情况 / 密钥状态等（数字版，详细图表延后）。"""
+"""管理员全局统计：申请总数 / 各状态分布 / 链接 / 密钥 / 各邀请人通过率明细。"""
 
-from sqlalchemy import func, select
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bccy_bot.db.models.application import Application
-from bccy_bot.db.models.enums import (
-    APP_STATUS_APPROVED,
-    APP_STATUS_PENDING,
-    APP_STATUS_REJECTED,
-    RK_ACTIVE,
-    RK_REVOKED,
-    RK_USED,
-)
-from bccy_bot.db.models.invite_link import InviteLink
-from bccy_bot.db.models.recovery_key import RecoveryKey
+from bccy_bot.db.models.enums import APP_STATUS_PENDING
 from bccy_bot.handlers.admin._common import ack, edit_or_reply, require_admin
 from bccy_bot.keyboards.admin_factory import back_only_keyboard
+from bccy_bot.services import stats_service
 from bccy_bot.utils.session import session_scope
+
+
+_TOP_INVITERS = 10  # 通过率明细只展示前 10 名，避免超出 Telegram 消息长度
 
 
 async def on_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -27,49 +20,46 @@ async def on_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     async with session_scope(context) as session:
-        # applications by status
-        rows = (
-            await session.execute(
-                select(Application.status, func.count(Application.id)).group_by(Application.status)
-            )
-        ).all()
-        by_status = {r[0]: r[1] for r in rows}
+        s = await stats_service.compute_global_stats(session)
 
-        # invite_links
-        total_links = (await session.execute(select(func.count(InviteLink.id)))).scalar_one()
-        used_links = (
-            await session.execute(select(func.count(InviteLink.id)).where(InviteLink.is_used.is_(True)))
-        ).scalar_one()
-        anomaly_links = (
-            await session.execute(
-                select(func.count(InviteLink.id)).where(InviteLink.is_anomaly.is_(True))
-            )
-        ).scalar_one()
-
-        # recovery keys
-        key_rows = (
-            await session.execute(
-                select(RecoveryKey.status, func.count(RecoveryKey.id)).group_by(RecoveryKey.status)
-            )
-        ).all()
-        keys = {r[0]: r[1] for r in key_rows}
-
-    pending = by_status.get(APP_STATUS_PENDING, 0)
-    approved = by_status.get(APP_STATUS_APPROVED, 0)
-    rejected = by_status.get(APP_STATUS_REJECTED, 0)
-    total = sum(by_status.values())
-    rate = f"{(approved / total * 100):.1f}%" if total else "—"
-
-    text = (
-        "📊 全局统计\n"
-        "─────────────────────────\n"
-        f"申请总数：{total}\n"
-        f"  待审核：{pending}\n"
-        f"  已通过：{approved}\n"
-        f"  已拒绝：{rejected}\n"
-        f"  通过率：{rate}\n\n"
-        f"邀请链接：{total_links} 个（已使用 {used_links}，异常 {anomaly_links}）\n"
-        f"回群密钥：active {keys.get(RK_ACTIVE, 0)} / used {keys.get(RK_USED, 0)} / "
-        f"revoked {keys.get(RK_REVOKED, 0)}"
+    pending = s.by_status.get(APP_STATUS_PENDING, 0)
+    rate = f"{s.approval_rate * 100:.1f}%" if s.approval_rate is not None else "—"
+    use_rate = (
+        f"{(s.used_links / s.total_links * 100):.1f}%"
+        if s.total_links else "—"
     )
-    await edit_or_reply(update, text, reply_markup=back_only_keyboard())
+
+    lines = [
+        "📊 全局统计",
+        "─────────────────────────",
+        f"申请总数：{s.total}",
+        f"  待审核：{pending}",
+        f"  已通过：{s.by_status.get('approved', 0)}",
+        f"  已拒绝：{s.by_status.get('rejected', 0)}",
+        f"  已取消：{s.by_status.get('cancelled', 0)}",
+        f"  通过率：{rate}",
+        "",
+        f"邀请链接：{s.total_links} 个",
+        f"  已使用：{s.used_links}（使用率 {use_rate}）",
+        f"  异常入群：{s.anomaly_links}",
+        "",
+        f"回群密钥：active {s.keys_active} / used {s.keys_used} / "
+        f"revoked {s.keys_revoked} / reset {s.keys_reset}",
+    ]
+
+    # 各邀请人明细：按 (申请数 desc, 通过率 desc) 排
+    if s.per_inviter:
+        ranked = sorted(
+            s.per_inviter,
+            key=lambda x: (-x.total, -(x.approval_rate or 0)),
+        )[:_TOP_INVITERS]
+        lines.append("")
+        lines.append(f"📌 各邀请人（前 {len(ranked)} 名）")
+        lines.append("─────────────────────────")
+        for inv_s in ranked:
+            ar = f"{inv_s.approval_rate * 100:.0f}%" if inv_s.approval_rate is not None else "—"
+            lines.append(
+                f"  {inv_s.inviter_display}：申请 {inv_s.total} / 通过率 {ar}"
+            )
+
+    await edit_or_reply(update, "\n".join(lines), reply_markup=back_only_keyboard())
