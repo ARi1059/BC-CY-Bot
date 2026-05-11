@@ -268,6 +268,81 @@ async def push_recovery_key_anomaly(
     await _safe_push(session, bot, text=text, kind="recovery_key_anomaly")
 
 
+async def push_reimbursement_event(
+    session: AsyncSession,
+    bot: Bot,
+    *,
+    kind: str,  # 'new' | 'approved' | 'paid' | 'rejected' | 'budget_reject'
+    reimbursement_id: int,
+    applicant_telegram_id: int,
+    applicant_username: str | None,
+    amount_cents: int,
+    reviewer_telegram_id: int | None = None,
+    reviewer_display: str | None = None,
+    reason: str | None = None,
+) -> None:
+    """报销系统事件推送（[REQ §8.5]）。
+
+    口令红包文本永远不进入日志频道（敏感数据，仅审核者↔申请人私聊可见）。
+    """
+    user_label = f"@{applicant_username}" if applicant_username else "（无用户名）"
+    amount_yuan = f"{amount_cents / 100:.2f}"
+    actor = reviewer_display or (f"#{reviewer_telegram_id}" if reviewer_telegram_id else "?")
+
+    if kind == "new":
+        text = (
+            f"💰 新报销申请 #R{reimbursement_id}\n"
+            "─────────────────────────\n"
+            f"👤 申请人：{user_label} ({applicant_telegram_id})\n"
+            f"💵 金额：{amount_yuan} 元\n"
+            f"🕐 时间：{_now_str()}"
+        )
+    elif kind == "approved":
+        text = (
+            f"✅ 报销已批准 #R{reimbursement_id}\n"
+            "─────────────────────────\n"
+            f"👤 申请人：{user_label} ({applicant_telegram_id})\n"
+            f"💵 金额：{amount_yuan} 元\n"
+            f"👮 审核人：{actor}\n"
+            f"🕐 时间：{_now_str()}\n"
+            "等待审核人发送口令红包文本…"
+        )
+    elif kind == "paid":
+        text = (
+            f"💸 报销已发放 #R{reimbursement_id}\n"
+            "─────────────────────────\n"
+            f"👤 申请人：{user_label} ({applicant_telegram_id})\n"
+            f"💵 金额：{amount_yuan} 元\n"
+            f"👮 操作人：{actor}\n"
+            f"🕐 时间：{_now_str()}"
+        )
+    elif kind == "rejected":
+        reason_line = reason if reason else "（未填写）"
+        text = (
+            f"❌ 报销拒绝 #R{reimbursement_id}\n"
+            "─────────────────────────\n"
+            f"👤 申请人：{user_label} ({applicant_telegram_id})\n"
+            f"💵 金额：{amount_yuan} 元\n"
+            f"👮 审核人：{actor}\n"
+            f"💬 原因：{reason_line}\n"
+            f"🕐 时间：{_now_str()}"
+        )
+    elif kind == "budget_reject":
+        text = (
+            f"⚠️ 报销被退回（预算不足）#R{reimbursement_id}\n"
+            "─────────────────────────\n"
+            f"👤 申请人：{user_label} ({applicant_telegram_id})\n"
+            f"💵 金额：{amount_yuan} 元\n"
+            f"👮 审核人：{actor}\n"
+            f"🕐 时间：{_now_str()}"
+        )
+    else:
+        log.warning("log_channel_unknown_rei_event", kind=kind)
+        return
+
+    await _safe_push(session, bot, text=text, kind=f"reimbursement_{kind}")
+
+
 async def push_link_expired(
     session: AsyncSession,
     bot: Bot,

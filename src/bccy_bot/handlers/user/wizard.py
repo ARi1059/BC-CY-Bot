@@ -31,6 +31,7 @@ from bccy_bot.handlers.admin import (
     groups as adm_groups_handlers,
     inviters as adm_inviters_handlers,
     reimbursement as adm_rei_handlers,
+    reimbursement_audit as adm_rev_handlers,
     settings_ui as adm_settings_handlers,
 )
 from bccy_bot.handlers.inviter import audit as inviter_audit
@@ -320,7 +321,10 @@ async def on_material_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     # 顺序消费各种 awaiting 状态
+    # 报销审核者的等待状态置于最前：审核流程时效敏感（口令 5 分钟）
     consumers = (
+        adm_rev_handlers.consume_payment_code_text,
+        adm_rev_handlers.consume_reject_reason_text,
         inviter_audit.consume_reject_reason_text,
         recovery_handler.consume_recovery_key_text,
         adm_groups_handlers.consume_add_group_forward,

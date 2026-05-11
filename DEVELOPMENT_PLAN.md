@@ -23,7 +23,7 @@
 | **v2 · 报销系统** | | | | |
 | M11 | 报销基础设施（5 张表 / migration / 设置项 / 资格列表 / 用户覆盖） | 1.5d | ✅ 已完成 | 2026-05-12 |
 | M12 | 用户侧报销 wizard（4 层预校验 + 引导提交 + 预览） | 1.5d | ✅ 已完成 | 2026-05-12 |
-| M13 | 管理员侧审核 + 口令红包转发（双消息 + 等待状态机） | 1.5d | ⬜ 未开始 | – |
+| M13 | 管理员侧审核 + 口令红包转发（双消息 + 等待状态机） | 1.5d | ✅ 已完成 | 2026-05-12 |
 | M14 | 周报 / 月报 JobQueue + 报销管理 UI + 月预算重置 | 1d | ⬜ 未开始 | – |
 
 **v1 总计 17 工作日；v2 报销系统 5.5 工作日**
@@ -447,23 +447,24 @@ BC-CY-Bot/
 
 **验收**：✅ 132/132 单元测试通过（M12 净新增 26）；89 handlers 注册成功；4 层预校验路径全覆盖；wizard 状态机所有迁移（advance / back / redo / preview / confirm / cancel / type-mismatch / media-group-reject）正确；缓存语义验证通过。
 
-### M13 管理员审核 + 口令红包转发（1.5 天）
+### M13 管理员审核 + 口令红包转发（1.5 天） ✅
 
 **目标**：审核双消息推送 + 通过/拒绝 + "等待口令"状态机 + 转发付款。
 
-- [ ] services/reimbursement_audit_service.py
-  - [ ] notify_admins —— 广播给所有 admin（复用代审型模式）
-  - [ ] 双消息（媒体组 + caption 报告 / 申请人信息 + 金额 + 历史次数 + 审核按钮）
-  - [ ] approve_reimbursement：行锁 + 预算复检 + 扣减 + status='approved' + 私聊审核者要求输入口令
-  - [ ] confirm_payment：消费"等待口令"文本 → 保存口令 + paid_at + paid_by + 转发给申请人 + status='paid'
-  - [ ] reject_reimbursement：与 §3.2.2 同
-- [ ] handlers/admin/reimbursement_audit.py：6 个 callback（通过/拒绝/拒绝原因/跳过/重发/取消等待）
-- [ ] 消息分发链：新增 `consume_payment_code_text` 优先级最高（位于 reject_reason 之前）
-- [ ] 5 分钟超时：等待状态在 bot_data，过期自动清；状态保持 approved，管理面板可补发
-- [ ] 日志频道：💰 报销已发放 / ❌ 报销拒绝
-- [ ] 单元测试：FakeBot 完整通过流 / 拒绝流 / 预算不足拒绝 / 多管理员并发
+- [x] services/reimbursement_audit_service.py
+  - [x] notify_admins：广播给所有 admin（每位独立 try/except，单人掉线不阻断）
+  - [x] 双消息（媒体组 + caption 报告 / 申请人信息 + 金额 + 近 30 天历史次数 + 审核按钮）
+  - [x] approve_request_step1：SELECT FOR UPDATE 行锁 + 预算复检 + 扣减 + status='approved' + 返回 ApprovalIntent
+  - [x] confirm_payment：保存 alipay_code_text + paid_at + paid_by + 转发给申请人 + status='paid'
+  - [x] reject_request：通用拒绝，含 budget_reject 分支（不扣预算）
+  - [x] 长报告 > 1024 字符自动降级为媒体组 + 独立报告消息 + 按钮三条
+- [x] handlers/admin/reimbursement_audit.py：5 个 callback（通过/拒绝/拒绝原因/跳过/重发）+ 2 个 awaiting consumer（拒绝原因 / 口令文本）
+- [x] 消息分发链：`consume_payment_code_text` + `consume_reject_reason_text` 置于链首（口令时效敏感）
+- [x] 行为：通过后用户发 /cancel 可放弃发放，状态保持 approved，可在 M14 管理面板补发
+- [x] 日志频道：5 类报销事件（new / approved / paid / rejected / budget_reject），口令永不入频道
+- [x] 单元测试：10 个新用例 = 广播 3 + 通过+付款完整流 1 + 预算不足自动 reject 1 + 拒绝带原因/无原因 2 + 第二审核者拒绝 1 + confirm_payment 边界 2
 
-**验收**：申请人收到口令文本；审核消息编辑为终态；DB 中 status=paid + alipay_code_text 已存；月预算扣减正确。
+**验收**：✅ 142/142 单元测试通过（M13 新增 10）；94 handlers 注册；审核消息差异化（acting vs others）；月预算正确扣减；申请人收到口令；并发审核第二人被拒绝。
 
 ### M14 周报/月报 + 报销管理 UI + 月预算重置（1 天）
 
@@ -556,14 +557,14 @@ mypy = "*"
 
 ## 10. 当前下一步
 
-**☞ M12 ✅ 完成；下一步进入 M13（管理员审核 + 口令红包转发）**
+**☞ M13 ✅ 完成；下一步进入 M14（周报/月报 + 报销管理 UI + 月预算重置）**
 
-v2 进度：M11 ✅ / M12 ✅ / M13 ⬜ / M14 ⬜
+v2 进度：M11 ✅ / M12 ✅ / M13 ✅ / M14 ⬜
 
-M13 启动顺序：
-1. 创建特性分支 `feature/M13-reimbursement-audit`
-2. 实现双消息审核推送 + 通过/拒绝 + "等待口令"状态机
-3. 完成后合并到 main，进入 M14
+M14 启动顺序：
+1. 创建特性分支 `feature/M14-reimbursement-reports`
+2. 周报/月报 JobQueue + 月预算自动重置 + 管理面板"待审核/待付款/历史记录"补全
+3. 完成后合并到 main，发布 v1.1.0（v2 完成版）
 
 v1.x 迭代候选（与 v2 并行可做）：
 - 回群密钥管理 UI（M5 占位）：完整的搜索 / 重置 / 撤销 / 历史查询
@@ -578,6 +579,13 @@ v1.x 迭代候选（与 v2 并行可做）：
 > 开发过程中的偏离决策、阻塞、关键判断在此追加。每条带日期。
 
 - `2026-05-12` 文档创建，与 REQUIREMENTS v1.0 对齐，未进入开发。
+- `2026-05-12` **M13 完成 —— 报销审核与口令转发上线**。关键决策与发现：
+  - **两阶段 approve**：approve_request_step1 只完成预算扣减+状态更新，返回 ApprovalIntent；handler 接住后 set_awaiting 等口令。两阶段拆分让"审核通过"与"发放口令"在数据层各自原子，5 分钟过期或 /cancel 都不会脏数据。
+  - **超预算自动 reject**：approve_request_step1 内预算复检失败时直接 reject_request(is_budget_reject=True) 然后抛 AuditError；handler 看到错误就显示给审核者，状态已落 rejected。
+  - **拒绝原因不外泄**：与 v1 代审型同模式 —— acting 看到原因，others 只看到"已被处理"。
+  - **口令永不入日志频道**：log_channel_service.push_reimbursement_event kind='paid' 仅显示金额+审核人，从不包含 alipay_code_text。这是 [REQ §8.5.12] 的硬约束。
+  - **消息分发链优先级**：consume_payment_code_text 放在最前（5 分钟时效）；reject_reason 紧随其后；其他 awaiting / wizard / 申请 wizard 都靠后。
+  - **review keyboard 沿用 v1 audit 模式**：双行布局（通过+拒绝 / 重发审核材料），二级菜单选填写原因 or 跳过，整套 UX 对管理员零学习成本。
 - `2026-05-12` **M12 完成 —— 用户侧报销 wizard 上线**。关键决策与发现：
   - **precheck 集中所有 4 层判定**：disabled → no_approved_app → has_active_request → cooldown → budget；handler 只负责取 bot_data 缓存的资格校验，避免把 5 层判定散落到 handler 各处。
   - **has_active_request 不当作错误**：检测到用户已有进行中的 wizard 会续上当前步骤（重新渲染 prompt），不进 wizard 也不让用户重启；这是友好的"resume wherever I left off"语义。
@@ -668,5 +676,5 @@ v1.x 迭代候选（与 v2 并行可做）：
 
 ---
 
-**文档版本：v1.5（M12 完成 —— 用户侧报销 wizard 上线）**
+**文档版本：v1.6（M13 完成 —— 报销审核与口令转发完成）**
 **最后更新：2026-05-12**

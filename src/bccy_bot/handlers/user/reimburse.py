@@ -22,6 +22,7 @@ from bccy_bot.repositories import (
 )
 from bccy_bot.services import (
     eligibility_service,
+    reimbursement_audit_service as rei_audit,
     reimbursement_wizard_service as rei_wizard,
 )
 from bccy_bot.services.reimbursement_wizard_service import (
@@ -309,7 +310,11 @@ async def on_preview_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await update.effective_message.reply_text(f"⚠️ {e}")
             return
 
-        # TODO(M13)：触发管理员侧审核推送 reimbursement_audit_service.notify_admins(...)
+        # 触发管理员侧审核推送；失败不阻塞 status=pending
+        try:
+            await rei_audit.notify_admins(session, context.bot, active)
+        except Exception:  # noqa: BLE001
+            log.exception("rei_notify_admins_failed", reimbursement_id=active.id)
 
     await update.effective_message.reply_text(
         "✅ 报销申请已提交！\n"
