@@ -10,7 +10,7 @@
 | 阶段 | 内容 | 工期 | 状态 | 起止 |
 |:----:|------|:---:|:----:|------|
 | M0 | 项目脚手架 + DB schema + 配置 + Keyboard 工厂 | 1.5d | ✅ 已完成 | 2026-05-12 |
-| M1 | 申请人引导式流程（禁媒体组 / 逐项 / 预览） | 2.5d | ⬜ 未开始 | – |
+| M1 | 申请人引导式流程（禁媒体组 / 逐项 / 预览） | 2.5d | ✅ 已完成 | 2026-05-12 |
 | M2 | 邀请人审核（双消息 / 通过-拒绝 / 一次性链接） | 2.5d | ⬜ 未开始 | – |
 | M3 | 代审型路由（多管理员行锁） | 1d | ⬜ 未开始 | – |
 | M4 | 链接使用追踪 + chat_member 监听 | 1d | ⬜ 未开始 | – |
@@ -142,31 +142,31 @@ BC-CY-Bot/
 
 ---
 
-### M1 申请人引导式流程（2.5 天）
+### M1 申请人引导式流程（2.5 天） ✅
 
 **目标**：用户能完整走完 `/start → 选邀请人 → 单张提交 3 项材料 → 预览 → 落库 pending`。
 
-- [ ] `handlers/user/start.py` —— 校验黑名单 / 已有 pending → 展示欢迎卡片
-- [ ] `keyboards/user.py` —— 欢迎卡片（开始申请 / 我有回群密钥 / 帮助）
-- [ ] `conversations/wizard_states.py` —— 定义 wizard 各步常量
-- [ ] **Step 1：选择邀请人**
-  - [ ] 从 inviters 表读取 active 邀请人，按"昵称·组别"分页展示
-  - [ ] 选中后写入 application(status='wizard', wizard_step=1)
-- [ ] **Step 2：逐项提交（严格 [REQ §3.1.1](REQUIREMENTS.md)）**
-  - [ ] 媒体组拦截：检测 `update.message.media_group_id` 非空 → 拒绝
-  - [ ] 类型校验：约课记录/上课手势 只接受 photo；出击报告 只接受 text
-  - [ ] 每条材料保存到 application_materials，记录 `original_message_id`
-  - [ ] 进度卡片：`(1/3) 请上传【约课记录】单张图片`，含 `[« 上一步] [❌ 取消]`
-- [ ] **Step 3：预览**
-  - [ ] 回显所有材料（图片直发，文本展示）
-  - [ ] 按钮：`[✅ 确认提交] [✏️ 重新提交] [❌ 取消]`
-- [ ] **Step 4：提交后**
-  - [ ] application.status='pending'，wizard_step 清零
-  - [ ] 触发 §M2 审核推送（接口预留）
-- [ ] 辅助按钮：`/help`、超时/异常文案
-- [ ] 单测：wizard 状态机所有迁移路径
+- [x] `handlers/user/start.py` —— 校验黑名单 / 已有 pending → 展示欢迎卡片 / 已有进行中提示
+- [x] `keyboards/factory.py` —— 欢迎卡片 + 邀请人列表（分页）+ 材料步骤 + 预览 + 取消确认 + 已有申请提示
+- [x] `services/wizard_service.py` —— DB-backed 状态机，CurrentStepInfo dataclass 隔离 telegram 依赖
+- [x] **Step 1：选择邀请人**
+  - [x] inviter_repo.list_active 读取 active 邀请人，按"昵称·组别"分页（6/页）
+  - [x] 选中后 set_inviter() → application.wizard_step=1
+- [x] **Step 2：逐项提交（严格 [REQ §3.1.1](REQUIREMENTS.md)）**
+  - [x] 媒体组拦截：`media_group_id` 非空 → WizardError("请单张提交...")
+  - [x] 类型校验：MAT_BOOKING/MAT_GESTURE = photo，MAT_REPORT = text
+  - [x] 落库 application_materials，记录 `original_message_id`（M7 forwardMessage 必备）
+  - [x] 进度卡片：`(i/N) 请上传【约课记录】单张图片` + `[« 上一步] [❌ 取消]`
+- [x] **Step 3：预览**
+  - [x] 回显材料类型 + 图标 + 文本摘要
+  - [x] `[✅ 确认提交] [✏️ 重新提交] [« 上一步] [❌ 取消]`
+- [x] **Step 4：提交后**
+  - [x] confirm_submit() → status='pending'，submitted_at 落时
+  - [x] 触发 M2 审核推送占位（TODO 已加在 `on_preview_confirm`）
+- [x] 辅助命令：`/help`（命令 + 按钮双入口）；二次确认 取消申请
+- [x] 单测：19 个用例覆盖所有 wizard 状态机迁移路径，全部通过
 
-**验收**：用户能完整提交一份申请；DB 中 application=pending、3 条 material；任何非法输入都被拒绝且 step 不前进。
+**验收**：✅ 19/19 单元测试通过（含完整 happy path、媒体组拒收、类型错配、回退、重做、取消幂等等所有路径）；16 个 handler 注册成功。
 
 ---
 
@@ -425,12 +425,12 @@ mypy = "*"
 
 ## 10. 当前下一步
 
-**☞ M0 ✅ 完成。等待用户确认即可进入 M1（申请人引导式流程）**
+**☞ M1 ✅ 完成。等待用户确认即可进入 M2（邀请人审核流程）**
 
-M1 启动时执行：
-1. 创建特性分支 `feature/M1-wizard`
-2. 按 §4 M1 任务清单逐项打勾推进
-3. 完成后合并到 main，进入 M2
+M2 启动时执行：
+1. 创建特性分支 `feature/M2-audit`
+2. 按 §4 M2 任务清单逐项打勾推进
+3. 完成后合并到 main，进入 M3
 
 ---
 
@@ -439,6 +439,13 @@ M1 启动时执行：
 > 开发过程中的偏离决策、阻塞、关键判断在此追加。每条带日期。
 
 - `2026-05-12` 文档创建，与 REQUIREMENTS v1.0 对齐，未进入开发。
+- `2026-05-12` **M1 完成**。关键决策与发现：
+  - **wizard_step 编码**：0=选邀请人，i∈[1,N]=等待第 i 项材料，N+1=预览。N 来自 inviter.required_materials 长度（每个邀请人可配不同材料组合）。
+  - **服务层零 Telegram 依赖**：wizard_service 入参全部用 plain Python 类型（含 `original_message_id: int`），便于单测；handler 层负责从 PTB Update 拆解再灌进来。
+  - **回退到第 1 步的语义**：清空 inviter_id + clear_materials + step=0，回到选邀请人。设计上保证用户可换邀请人。
+  - **取消采用二次确认**：避免误触丢失已提交材料；不取消的 dismiss 按钮编辑回提示文案，不会让用户卡住。
+  - **handler 层"基于 DB 状态分发"**：用户从陈旧消息点按钮也安全 —— 一切按 DB 当前 status/wizard_step 决策。
+  - **测试种子函数的坑**：`materials or [...]` 把 `materials=[]` 短路成默认值，已用 `if materials is None` 修正。
 - `2026-05-12` **M0 完成**。关键决策与发现：
   - **PTB 实际版本 22.7**（pyproject 写的 `>=21.0`，pip 解析到 22.7）。代码 API 兼容，未受影响。
   - **本地 Python 3.14.4**：所有依赖安装无障碍。
@@ -448,5 +455,5 @@ M1 启动时执行：
 
 ---
 
-**文档版本：v0.2（M0 完成）**
+**文档版本：v0.3（M1 完成）**
 **最后更新：2026-05-12**
