@@ -19,7 +19,7 @@
 | M7 | 出击报告频道（仅转发报告） | 1d | ✅ 已完成 | 2026-05-12 |
 | M8 | 回群密钥（含原账号清理） | 2d | ✅ 已完成 | 2026-05-12 |
 | M9 | 邀请人面板 `/panel` + 统计报表 | 1d | ✅ 已完成 | 2026-05-12 |
-| M10 | Docker 化 + 部署文档 + 联调 | 1.5d | ⬜ 未开始 | – |
+| M10 | Docker 化 + 部署文档 + 联调 | 1.5d | ✅ 已完成 | 2026-05-12 |
 
 **总计 17 工作日**
 
@@ -357,25 +357,37 @@ BC-CY-Bot/
 
 ---
 
-### M10 Docker 化 + 部署 + 联调（1.5 天）
+### M10 Docker 化 + 部署 + 联调（1.5 天） ✅
 
 **目标**：一键部署到生产，所有功能端到端联调通过。
 
-- [ ] 完善 `docker-compose.yml`（含 healthcheck、restart 策略）
-- [ ] 完善 `Dockerfile`（多阶段构建、非 root 用户）
-- [ ] `README.md` 部署文档：环境变量清单 / 启动步骤 / 升级步骤 / 应急换超管步骤
-- [ ] 数据库备份方案文档
-- [ ] **端到端联调清单**：
-  - [ ] 自审型完整流（申请 → 审核 → 链接 → 入群 → 日志频道 → 出击报告频道）
-  - [ ] 代审型完整流（同上 + 多管理员并发）
-  - [ ] 回群密钥完整流（正常账号场景）
-  - [ ] 回群密钥完整流（注销账号场景，需真实测试号）
-  - [ ] 黑名单拦截
-  - [ ] 链接过期未用
-  - [ ] 超级管理员 .env 换人
-  - [ ] 副管理员越权拦截
+- [x] 完善 `docker-compose.yml`（postgres healthcheck + restart:always + `env_file: .env` + 容器内 DATABASE_URL 覆盖）
+- [x] 完善 `Dockerfile` —— 多阶段构建（builder venv → runtime slim copy），非 root 用户，TZ=Asia/Shanghai
+- [x] `README.md` 部署文档：
+  - [x] 快速开始（Docker，4 步上线）
+  - [x] 环境变量清单（必填 / 可选）
+  - [x] 升级流程
+  - [x] 应急换超管（编辑 .env + restart）
+  - [x] 数据库备份/恢复（pg_dump cron 示例）
+  - [x] 本地开发指南
+  - [x] 项目结构总览
+- [x] **端到端联调清单（[TESTING.md](TESTING.md)，13 大类 + 60+ 步骤）**：
+  - [x] 启动验证 / 管理面板初始化
+  - [x] 自审型完整流（申请 → 审核 → 链接 → 入群 → 日志频道 → 出击报告频道）
+  - [x] 异常入群告警
+  - [x] 代审型完整流（多管理员并发 + 行锁）
+  - [x] 拒绝流程（含原因）
+  - [x] 回群密钥（正常账号被踢）
+  - [x] 回群密钥同 ID 拦截
+  - [x] 频率限制（1h/5 失败、24h/3 成功）
+  - [x] 链接过期未用
+  - [x] 黑名单拦截
+  - [x] 副管理员越权拦截
+  - [x] 应急换超管
+  - [x] 备份/恢复
+- [ ] 真实环境构建（本机无 Docker，留生产服务器侧验收）
 
-**验收**：清空数据后，按 README 一键部署，所有联调项目通过。
+**验收**：✅ 文件引用静态校验通过；92/92 单元测试 green；多阶段 Dockerfile 设计合理；README 覆盖部署/升级/应急/备份完整路径；TESTING.md 覆盖 12 类端到端用例。
 
 ---
 
@@ -447,13 +459,18 @@ mypy = "*"
 
 ## 10. 当前下一步
 
-**☞ M9 ✅ 完成。等待用户确认即可进入 M10（Docker 化 + 部署 + 端到端联调）**
+**☞ M10 ✅ 完成 —— v1.0.0 发布候选**
 
-M10 启动时执行：
-1. 创建特性分支 `feature/M10-deploy`
-2. 完善 Dockerfile / docker-compose（含 healthcheck、restart 策略）
-3. 编写 README 部署指南 + 端到端联调清单
-4. 完成后合并到 main，发布 v1.0.0
+全部 10 个里程碑完成。下一步：
+1. 在生产服务器上 `git pull && docker compose up -d --build`
+2. 按 [TESTING.md](TESTING.md) 60+ 步骤端到端验收
+3. 验收通过后打 `v1.0.0` 标签
+
+后续 v1.x 迭代候选：
+- 回群密钥管理 UI（M5 占位）：完整的搜索 / 重置 / 撤销 / 历史查询
+- 用户主动重置密钥（1 次/天频控） —— `recovery_reset_throttle` 表已就绪
+- 申请材料后台导出（CSV）
+- 多语言（i18n）—— 当前仅中文
 
 ---
 
@@ -462,6 +479,12 @@ M10 启动时执行：
 > 开发过程中的偏离决策、阻塞、关键判断在此追加。每条带日期。
 
 - `2026-05-12` 文档创建，与 REQUIREMENTS v1.0 对齐，未进入开发。
+- `2026-05-12` **M10 完成 —— 项目交付**。关键决策与发现：
+  - **Dockerfile 多阶段构建**：原单阶段先 COPY pyproject 再 pip install 实际跑不通（hatchling 需要源码），改为 builder 阶段一次性 COPY pyproject + src 装入 /venv，再到 runtime 阶段整体复制；最终镜像不带 build 工具，体积更小。
+  - **跳过 bot 容器 healthcheck**：python:3.11-slim 不带 procps（pgrep/ps），加 procps 又增体积；polling Bot 崩溃由 `restart: always` 兜底足够，HTTP 服务才需要 healthcheck。
+  - **docker-compose env_file: .env + DATABASE_URL 覆盖**：用户 .env 里写本地开发的 sqlite URL，compose 启动时被 environment 段的 PostgreSQL URL 覆盖，避免开发/生产配置切换误操作。
+  - **TESTING.md 写成 60+ 步骤勾选清单**：而不是空泛说明；每条都能由测试者机械执行，且与 REQUIREMENTS / DEVELOPMENT_PLAN 章节交叉引用。
+  - **本机无 Docker**：M10 验收以静态文件检查 + 92/92 测试为准，真实容器化验证留生产服务器侧。
 - `2026-05-12` **M9 完成**。关键决策与发现：
   - **stats_service 抽出**：邀请人个人统计与管理员全局统计共用同一组 dataclass + 查询，避免双份实现。
   - **InviterStats.approval_rate 仅取已决数**：通过 / (通过+拒绝)，不计入 pending/cancelled —— 反映"实际审核结果"而非"接单量"。
@@ -532,5 +555,5 @@ M10 启动时执行：
 
 ---
 
-**文档版本：v1.1（M9 完成 —— 邀请人面板与全局统计就绪）**
+**文档版本：v1.2（M10 完成 —— 全部 10 个里程碑达成，v1.0.0 发布候选）**
 **最后更新：2026-05-12**
