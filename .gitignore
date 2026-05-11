@@ -1,0 +1,99 @@
+# ===== Secrets & Config =====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+config.local.*
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ===== Virtual Environments =====
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# ===== Testing & Coverage =====
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+nosetests.xml
+
+# ===== Type Checkers / Linters =====
+.mypy_cache/
+.ruff_cache/
+.pyright/
+.pytype/
+
+# ===== Databases (local dev) =====
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-journal
+*.sqlite3
+*.sqlite3-journal
+data/
+dumps/
+*.sql.gz
+
+# ===== Logs =====
+logs/
+*.log
+*.log.*
+
+# ===== IDE / Editor =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+.project
+.pydevproject
+
+# ===== Docker =====
+docker-compose.override.yml
+
+# ===== Misc =====
+tmp/
+temp/
+*.bak
+*.tmp
+node_modules/
+
+# ===== Claude / AI Tools (local) =====
+.claude/settings.local.json
