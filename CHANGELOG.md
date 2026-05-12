@@ -1,0 +1,70 @@
+# Changelog
+
+本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，
+版本号遵循 [PEP 440](https://peps.python.org/pep-0440/) 与 [SemVer](https://semver.org/lang/zh-CN/)。
+
+---
+
+## [1.0.0-beta.1] - 2026-05-12
+
+首个公开 Beta。完整覆盖 v1 入群审核（M0–M10）与 v2 报销系统（M11–M14），
+148/148 单元测试通过，99 个 handler 注册，PostgreSQL/SQLite 双数据库验证。
+
+### 核心能力（v1：一次性入群邀请审核）
+
+- **申请人 wizard**：`/start` 引导式 3 项材料提交，严格单张、禁用媒体组、预览后提交
+- **邀请人审核**：双消息推送（媒体组+caption 报告 / 申请人信息+审核按钮），
+  通过/拒绝二选一，长报告（>1024 字）自动降级为三消息
+- **自审 / 代审双模式**：代审型广播全部管理员，DB 行锁 `SELECT FOR UPDATE` 保证先到先得
+- **一次性邀请链接**：`member_limit=1`，TTL 可在面板调节（默认 24h，1–168h clamp）
+- **chat_member 监听**：实际入群即落库；申请人 ID ≠ 入群 ID 触发异常告警
+- **回群密钥救济**：argon2 哈希存储，7 条校验顺序、同 ID 拦截、频率限制、
+  原账号自动踢/封 + 注销账号识别 + 本地黑名单写入
+- **日志频道 / 出击报告频道**：6 类事件卡片，链接 URL 脱敏，永不打扰频道观察者
+- **主/副管理员分层**：仅超管可任命副管理员与转让身份，`uq_one_super_admin` 部分唯一索引保证唯一
+- **超管应急换人**：`.env` 中 `INITIAL_SUPER_ADMIN_ID` 与 DB 不一致时强制覆盖
+- **邀请人面板**：`/panel` 个人统计（接单数、通过率 Top 10、近期记录）
+- **管理员面板**：`/admin` 11 子模块，所有写操作落 `audit_logs`
+
+### 核心能力（v2：报销系统）
+
+- **报销 wizard**：用户 `/reimburse` 引导提交 3 项材料，4 层预校验
+  （全局开关 / 必须有 approved 申请 / 不能有进行中申请 / 冷却 / 月预算）
+- **资格成员校验**：群/超群/频道任意一项满足即可，bot_data 5 分钟缓存（仅 success）
+- **审核 + 红包转发**：审核通过 → 等待管理员粘贴支付宝口令（5 分钟时效）→ 自动转发申请人
+- **月预算 + 重置日**：金额统一以分（cents）存储，避免浮点误差；
+  每天 00:00:05 检查重置日，每月自动回填预算余额
+- **周报 / 月报**：JobQueue 每日 00:05/00:10 触发，周一/月 1 号才推送给所有超管
+- **管理面板**：`[💰 报销管理]` 入口 → 待审核 / 待付款补发 / 历史 / 系统配置 / 资格列表 / 用户冷却覆盖
+- **用户冷却覆盖**：单用户白名单格式 `user_id days [notes]`，upsert 写入
+
+### 工程基线
+
+- Python 3.11+ / python-telegram-bot v21+（实测 22.7）/ SQLAlchemy 2.0 async
+- 13+5=18 张表 + 4 个 Alembic migration（初始 schema、审核消息、链接过期标记、报销基础设施）
+- 多阶段 Dockerfile（builder + runtime，非 root 运行）
+- `docker compose up -d --build` 一键启动，环境变量统一 `.env`
+- 148 个单元测试，覆盖服务层全部业务路径与状态机分支
+- 70+ 端到端联调用例（TESTING.md），含报销 §14 全流程
+
+### 已知限制
+
+- 回群密钥管理 UI 仍是占位（管理面板 §M5），密钥仅可在 audit_logs 间接查询
+- 用户主动重置密钥（1 次/天频控）—— `recovery_reset_throttle` 表已就绪，handler 未上线
+- 仅中文文案，未做 i18n
+- 申请材料后台导出（CSV）未实现
+
+### 升级 / 部署
+
+```bash
+git pull
+docker compose build bot
+docker compose up -d bot
+docker compose logs -f bot   # 等待 super_admin_ensured + alembic upgrade head
+```
+
+部署后请按 [TESTING.md](TESTING.md) 走 v1 + v2 E2E 全套用例。
+
+---
+
+[1.0.0-beta.1]: https://github.com/ARi1059/BC-CY-Bot/releases/tag/v1.0.0-beta.1

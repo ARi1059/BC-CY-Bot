@@ -1,7 +1,13 @@
 # BC-CY-Bot
 
-一次性入群邀请审核 Telegram Bot —— 引导式申请、双消息审核、回群密钥救济、出击报告归档、日志频道审计。
+[![Release](https://img.shields.io/badge/release-v1.0.0--beta.1-blue)](https://github.com/ARi1059/BC-CY-Bot/releases/tag/v1.0.0-beta.1)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![Tests](https://img.shields.io/badge/tests-148%20passed-brightgreen)](TESTING.md)
 
+一次性入群邀请审核 Telegram Bot —— 引导式申请、双消息审核、回群密钥救济、出击报告归档、日志频道审计，
+并提供完整的 **报销系统**（wizard + 审核 + 红包口令转发 + 月预算 + 周/月报）。
+
+> 当前版本 **v1.0.0-beta.1**（首个公开 Beta），详细变更见 [CHANGELOG.md](CHANGELOG.md)。
 > 详细需求见 [REQUIREMENTS.md](REQUIREMENTS.md)，开发过程见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
 
 ---
@@ -186,6 +192,7 @@ export INITIAL_SUPER_ADMIN_ID=...
 BC-CY-Bot/
 ├── REQUIREMENTS.md             需求规格
 ├── DEVELOPMENT_PLAN.md         开发计划与执行日志
+├── CHANGELOG.md                版本变更记录
 ├── README.md                   本文件
 ├── TESTING.md                  端到端联调清单
 ├── docker-compose.yml
