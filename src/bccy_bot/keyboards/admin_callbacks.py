@@ -83,6 +83,7 @@ ADM_REI_SET_BUDGET = "admin:rei:s:bdg"
 ADM_REI_RESET_REMAINING = "admin:rei:s:rst"
 ADM_REI_SET_COOLDOWN = "admin:rei:s:cd"
 ADM_REI_SET_RESET_DAY = "admin:rei:s:rd"
+ADM_REI_SET_PAYMENT_RELAY = "admin:rei:s:relay"   # v1.0.0-beta.4 设置口令发放员
 # Eligibility chats
 ADM_REI_ELIG = "admin:rei:e"
 ADM_REI_ELIG_ADD = "admin:rei:e:add"

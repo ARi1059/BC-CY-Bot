@@ -35,6 +35,7 @@ from bccy_bot.keyboards.admin_callbacks import (
     ADM_REI_RESET_REMAINING,
     ADM_REI_SET_BUDGET,
     ADM_REI_SET_COOLDOWN,
+    ADM_REI_SET_PAYMENT_RELAY,
     ADM_REI_SET_RESET_DAY,
     ADM_REI_SETTINGS,
     ADM_REI_TOGGLE,
@@ -565,6 +566,9 @@ def reimbursement_settings_keyboard(is_super: bool, enabled: bool) -> InlineKeyb
         )
         rows.append(
             [InlineKeyboardButton("✏️ 设置预算重置日", callback_data=ADM_REI_SET_RESET_DAY)]
+        )
+        rows.append(
+            [InlineKeyboardButton("✏️ 设置口令发放员", callback_data=ADM_REI_SET_PAYMENT_RELAY)]
         )
     rows.append([InlineKeyboardButton("« 返回报销管理", callback_data=ADM_REI)])
     return InlineKeyboardMarkup(rows)

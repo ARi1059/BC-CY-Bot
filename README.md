@@ -1,13 +1,13 @@
 # BC-CY-Bot
 
-[![Release](https://img.shields.io/badge/release-v1.0.0--beta.3-blue)](https://github.com/ARi1059/BC-CY-Bot/releases/tag/v1.0.0-beta.3)
+[![Release](https://img.shields.io/badge/release-v1.0.0--beta.4-blue)](https://github.com/ARi1059/BC-CY-Bot/releases/tag/v1.0.0-beta.4)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-153%20passed-brightgreen)](TESTING.md)
+[![Tests](https://img.shields.io/badge/tests-157%20passed-brightgreen)](TESTING.md)
 
 一次性入群邀请审核 Telegram Bot —— 引导式申请、双消息审核、回群密钥救济、出击报告归档、日志频道审计，
 并提供完整的 **报销系统**（wizard + 审核 + 红包口令转发 + 月预算 + 周/月报）。
 
-> 当前版本 **v1.0.0-beta.3**（入群/报销解耦 + 独立报销老师 + 永封策略 + 资格缺失提示），详细变更见 [CHANGELOG.md](CHANGELOG.md)。
+> 当前版本 **v1.0.0-beta.4**（口令发放员角色 + 行内代码口令 + 资格失败通用化），详细变更见 [CHANGELOG.md](CHANGELOG.md)。
 >
 > **📘 上手三件套**：
 > - [搭建文档 DEPLOYMENT.md](DEPLOYMENT.md) — 从零部署到生产

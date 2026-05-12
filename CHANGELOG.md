@@ -5,6 +5,36 @@
 
 ---
 
+## [1.0.0-beta.4] - 2026-05-13
+
+报销审核流程引入"口令发放员"角色：审核者不再亲自填口令，由独立配置的发放员私聊 Bot 输入；
+发给申请人的口令改为行内代码样式，点击/长按可复制；资格校验失败的提示改回通用文案（不暴露具体缺失项）。
+
+### Added
+- 新设置项 `SK_REI_PAYMENT_RELAY_TELEGRAM_ID`（口令发放员的 Telegram 数字 ID；0=未配置）
+- 系统配置面板新增 `[✏️ 设置口令发放员]`（超管专属）+ `AWAIT_REI_PAYMENT_RELAY_ID` 输入态
+- `audit_service._dispatch_to_relay()`：审核通过后向发放员 DM「待发放报销摘要 + [🧧 输入口令] 按钮」
+- 新 callback `rei:rly:<id>` 触发口令输入态（位于 `reimbursement_audit.on_relay_enter`）
+- 新测试：relay 派发成功 / 未配置 fallback / DM 失败 fallback / 行内代码包装
+
+### Changed
+- `ApprovalIntent` 新增 `relay_dispatched: bool` + `relay_user_id: int | None`
+- `consume_payment_code_text` 授权放宽：管理员或当前口令发放员均可
+- `confirm_payment` 给申请人发送的口令消息：HTML parse_mode + `<code>...</code>` 包裹，HTML 特殊字符自动 escape
+- `_render_missing` 退回为通用文案 `⚠️ 您不符合报销资格，请联系管理员。`（防探测，具体缺失项仍写入 structlog）
+
+### Upgrade
+```bash
+cd /opt/BC-CY-Bot
+sudo -u bccy git fetch --tags && git checkout v1.0.0-beta.4
+sudo -u bccy .venv/bin/pip install --upgrade .
+sudo systemctl restart bccy-bot
+```
+配置：进 `/admin → 💰 报销管理 → 📋 系统配置 → ✏️ 设置口令发放员` 输入发放员的 Telegram 数字 ID。
+**重要**：该用户必须先私聊 Bot 至少 1 次，否则 Bot 无法 DM 他/她（会自动 fallback 到原管理员输入）。
+
+---
+
 ## [1.0.0-beta.3] - 2026-05-13
 
 入群审核 / 报销系统重大解耦：报销不再依赖入群审核状态；新增独立的"报销老师"实体；
@@ -163,6 +193,7 @@ docker compose logs -f bot   # 等待 super_admin_ensured + alembic upgrade head
 
 ---
 
+[1.0.0-beta.4]: https://github.com/ARi1059/BC-CY-Bot/releases/tag/v1.0.0-beta.4
 [1.0.0-beta.3]: https://github.com/ARi1059/BC-CY-Bot/releases/tag/v1.0.0-beta.3
 [1.0.0-beta.2]: https://github.com/ARi1059/BC-CY-Bot/releases/tag/v1.0.0-beta.2
 [1.0.0-beta.1]: https://github.com/ARi1059/BC-CY-Bot/releases/tag/v1.0.0-beta.1

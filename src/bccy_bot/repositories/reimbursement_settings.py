@@ -8,6 +8,7 @@ from bccy_bot.db.models.enums import (
     SK_REI_GLOBAL_ENABLED,
     SK_REI_MONTHLY_BUDGET_CENTS,
     SK_REI_MONTHLY_REMAINING_CENTS,
+    SK_REI_PAYMENT_RELAY_TELEGRAM_ID,
 )
 from bccy_bot.repositories import settings_repo
 
@@ -64,6 +65,16 @@ async def get_default_cooldown_days(session: AsyncSession) -> int:
 async def set_default_cooldown_days(session: AsyncSession, days: int) -> None:
     days = max(MIN_COOLDOWN_DAYS, min(MAX_COOLDOWN_DAYS, int(days)))
     await settings_repo.set_value(session, SK_REI_DEFAULT_COOLDOWN_DAYS, str(days))
+
+
+async def get_payment_relay_telegram_id(session: AsyncSession) -> int:
+    """口令发放员 Telegram ID；0 表示未配置（审核 fallback 到原管理员输入）。"""
+    return await settings_repo.get_int(session, SK_REI_PAYMENT_RELAY_TELEGRAM_ID, 0)
+
+
+async def set_payment_relay_telegram_id(session: AsyncSession, telegram_user_id: int) -> None:
+    tid = max(0, int(telegram_user_id))
+    await settings_repo.set_value(session, SK_REI_PAYMENT_RELAY_TELEGRAM_ID, str(tid))
 
 
 # 用于面板展示

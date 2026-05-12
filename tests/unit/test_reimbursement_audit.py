@@ -328,3 +328,111 @@ async def test_confirm_payment_rejects_empty_code(session):
         )
     # 状态仍是 approved，未变成 paid
     assert r.status == REI_STATUS_APPROVED
+
+
+# ---------- v1.0.0-beta.4 口令发放员 + 行内代码 ----------
+
+
+@pytest.mark.asyncio
+async def test_approve_dispatches_to_relay_user_when_configured(session):
+    """配置口令发放员后，approve_step1 应 DM 该用户并返回 relay_dispatched=True。"""
+    bot = FakeBot()
+    r, admin_ids = await _seed_pending(session)
+    await reimbursement_settings.set_monthly_budget_cents(session, 50000)
+    await reimbursement_settings.set_monthly_remaining_cents(session, 50000)
+    await reimbursement_settings.set_payment_relay_telegram_id(session, 88888)
+
+    await audit.notify_admins(session, bot, r)
+
+    intent = await audit.approve_request_step1(
+        session, bot, r,
+        reviewer_telegram_id=admin_ids[0],
+        reviewer_display="@admin0",
+    )
+    assert intent.relay_dispatched is True
+    assert intent.relay_user_id == 88888
+
+    # 88888 应收到 DM 包含审核摘要 + 按钮
+    relay_dms = [t for t in bot.sent_texts if t.chat_id == 88888]
+    assert len(relay_dms) >= 1
+    assert any("待发放报销" in t.text for t in relay_dms)
+    assert relay_dms[-1].reply_markup is not None  # 含 [🧧 输入口令] 按钮
+
+
+@pytest.mark.asyncio
+async def test_approve_falls_back_when_relay_not_configured(session):
+    """未配置口令发放员（默认 0）→ relay_dispatched=False，沿用原审核者输入路径。"""
+    bot = FakeBot()
+    r, admin_ids = await _seed_pending(session)
+    await reimbursement_settings.set_monthly_budget_cents(session, 50000)
+    await reimbursement_settings.set_monthly_remaining_cents(session, 50000)
+    # 不设置 payment_relay → 默认 0
+
+    await audit.notify_admins(session, bot, r)
+    intent = await audit.approve_request_step1(
+        session, bot, r,
+        reviewer_telegram_id=admin_ids[0],
+        reviewer_display="@admin0",
+    )
+    assert intent.relay_dispatched is False
+    assert intent.relay_user_id is None
+
+
+@pytest.mark.asyncio
+async def test_approve_falls_back_when_relay_dm_fails(session):
+    """配置了 relay 但 DM 失败（如用户没私聊过 Bot）→ fallback 到审核者。"""
+    from telegram.error import Forbidden
+
+    bot = FakeBot()
+    # 让 FakeBot 在 send_message 给 99999 时抛错
+    original = bot.send_message
+
+    async def failing_send(chat_id, text, reply_markup=None, **kwargs):
+        if chat_id == 99999:
+            raise Forbidden("bot blocked by user")
+        return await original(chat_id, text, reply_markup, **kwargs)
+    bot.send_message = failing_send
+
+    r, admin_ids = await _seed_pending(session)
+    await reimbursement_settings.set_monthly_budget_cents(session, 50000)
+    await reimbursement_settings.set_monthly_remaining_cents(session, 50000)
+    await reimbursement_settings.set_payment_relay_telegram_id(session, 99999)
+
+    await audit.notify_admins(session, bot, r)
+    intent = await audit.approve_request_step1(
+        session, bot, r,
+        reviewer_telegram_id=admin_ids[0],
+        reviewer_display="@admin0",
+    )
+    assert intent.relay_dispatched is False  # fallback
+
+
+@pytest.mark.asyncio
+async def test_confirm_payment_sends_inline_code_to_applicant(session):
+    """v1.0.0-beta.4：发给申请人的口令消息应包含 <code>...</code> 行内代码。"""
+    bot = FakeBot()
+    r, admin_ids = await _seed_pending(session)
+    await reimbursement_settings.set_monthly_budget_cents(session, 50000)
+    await reimbursement_settings.set_monthly_remaining_cents(session, 50000)
+    await audit.notify_admins(session, bot, r)
+    await audit.approve_request_step1(
+        session, bot, r,
+        reviewer_telegram_id=admin_ids[0],
+        reviewer_display="@admin0",
+    )
+
+    code = "口令A&B<x>"  # 含 HTML 特殊字符，验证 escape
+    await audit.confirm_payment(
+        session, bot, r,
+        reviewer_telegram_id=admin_ids[0],
+        reviewer_display="@admin0",
+        payment_code_text=code,
+    )
+
+    applicant_msgs = [t for t in bot.sent_texts if t.chat_id == r.applicant_telegram_id]
+    assert applicant_msgs, "applicant should receive DM"
+    last_text = applicant_msgs[-1].text
+    assert "<code>" in last_text and "</code>" in last_text
+    # HTML 实体已转义
+    assert "&amp;" in last_text
+    assert "&lt;" in last_text and "&gt;" in last_text

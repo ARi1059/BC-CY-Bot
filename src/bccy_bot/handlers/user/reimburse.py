@@ -233,19 +233,9 @@ async def _send_step(
 
 
 def _render_missing(missing: list[str], errored: list[str]) -> str:
-    lines = ["⚠️ 您不符合报销资格，缺失以下订阅："]
-    if missing:
-        for name in missing:
-            lines.append(f"• {name}")
-    if errored:
-        lines.append("")
-        lines.append("⚙️ 以下条目暂时无法查询（可能是 Bot 权限/网络），请稍后再试或联系管理员：")
-        for name in errored:
-            lines.append(f"• {name}")
-    if not missing and not errored:
-        # 兜底：管理员未配置任何资格条目
-        lines.append("（暂未配置资格条目，请联系管理员先配置后再申请）")
-    return "\n".join(lines)
+    """v1.0.0-beta.4 起：对外仅显示通用文案，不暴露具体缺失项（防探测）。
+    具体缺失项通过 log 字段供管理员排查。"""
+    return "⚠️ 您不符合报销资格，请联系管理员。"
 
 
 # ---------- 入口：/reimburse + 欢迎卡片按钮 ----------

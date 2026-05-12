@@ -18,7 +18,7 @@ from bccy_bot.keyboards.reimburse_audit_callbacks import (
     parse_reject_skip,
     parse_view,
 )
-from bccy_bot.repositories import admin_repo
+from bccy_bot.repositories import admin_repo, reimbursement_settings
 from bccy_bot.services import reimbursement_audit_service as audit
 from bccy_bot.services.reimbursement_audit_service import ReimbursementAuditError
 from bccy_bot.utils.awaiting import clear_awaiting, get_awaiting, set_awaiting
@@ -105,7 +105,17 @@ async def on_approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             await _reply(update, f"⚠️ {e}")
             return
 
-    # 设置 awaiting：让此审核者下一条文本被视为口令
+    # v1.0.0-beta.4：若 ApprovalIntent.relay_dispatched=True → 已通知口令发放员
+    if intent.relay_dispatched:
+        await _reply(
+            update,
+            f"✅ 已批准 #R{intent.reimbursement_id}。\n"
+            f"已通知口令发放员（ID {intent.relay_user_id}）私聊 Bot 输入口令。\n"
+            "（如需补发 / 接管，可在管理面板「💸 待付款」列表中操作。）",
+        )
+        return
+
+    # fallback：未配置口令发放员 → 审核者自己输入口令
     set_awaiting(
         context,
         update.effective_user.id,
@@ -268,7 +278,7 @@ async def consume_reject_reason_text(
 async def consume_payment_code_text(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> bool:
-    """审核者发口令文本 → 触发 confirm_payment → Bot 转发给申请人。"""
+    """口令文本消费者：可由管理员（fallback 路径）或口令发放员（v1.0.0-beta.4 主路径）触发。"""
     if update.effective_user is None or update.message is None or update.message.text is None:
         return False
     state = get_awaiting(context, update.effective_user.id)
@@ -284,7 +294,11 @@ async def consume_payment_code_text(
 
     rei_id = state["data"].get("reimbursement_id")
     async with session_scope(context) as session:
-        if not await _authorize_admin(session, update.effective_user.id):
+        # 授权：必须是管理员或当前口令发放员
+        is_admin = await _authorize_admin(session, update.effective_user.id)
+        relay_id = await reimbursement_settings.get_payment_relay_telegram_id(session)
+        is_relay = relay_id > 0 and relay_id == update.effective_user.id
+        if not (is_admin or is_relay):
             clear_awaiting(context, update.effective_user.id)
             await update.message.reply_text("⛔ 您无权操作。")
             return True
@@ -312,6 +326,56 @@ async def consume_payment_code_text(
     clear_awaiting(context, update.effective_user.id)
     await update.message.reply_text("✅ 口令已转发给申请人，报销已发放完成。")
     return True
+
+
+# ---------- 口令发放员点击 [🧧 输入口令] 按钮 ----------
+
+
+REL_RELAY_ENTER_PREFIX = "rei:rly:"
+
+
+def parse_relay_enter(data: str) -> int | None:
+    if not data.startswith(REL_RELAY_ENTER_PREFIX):
+        return None
+    try:
+        return int(data[len(REL_RELAY_ENTER_PREFIX):])
+    except ValueError:
+        return None
+
+
+async def on_relay_enter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """口令发放员 DM 中收到的 [🧧 输入口令] 按钮回调。设置 awaiting + 提示输入。"""
+    await _ack(update)
+    if update.effective_user is None or update.callback_query is None:
+        return
+    rei_id = parse_relay_enter(update.callback_query.data or "")
+    if rei_id is None:
+        return
+    async with session_scope(context) as session:
+        relay_id = await reimbursement_settings.get_payment_relay_telegram_id(session)
+        if relay_id <= 0 or relay_id != update.effective_user.id:
+            await _reply(update, "⛔ 您不是当前配置的口令发放员。")
+            return
+        request = await session.get(ReimbursementRequest, rei_id)
+        if request is None:
+            await _reply(update, "⚠️ 该报销不存在。")
+            return
+        if request.status != REI_STATUS_APPROVED:
+            await _reply(update, f"⚠️ 报销 #R{rei_id} 已不在'已批准待付款'状态（当前 {request.status}）。")
+            return
+
+    set_awaiting(
+        context,
+        update.effective_user.id,
+        AWAIT_PAYMENT_CODE_KIND,
+        {"reimbursement_id": rei_id},
+    )
+    await _reply(
+        update,
+        f"🧧 已进入输入状态（#R{rei_id}）。\n"
+        "请直接发送【支付宝口令红包文本】，Bot 将自动转发给申请人。\n"
+        "发送 /cancel 取消。",
+    )
 
 
 # ---------- 共用 ----------

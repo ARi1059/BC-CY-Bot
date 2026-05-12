@@ -105,6 +105,7 @@ from bccy_bot.keyboards.admin_callbacks import (
     ADM_REI_RESET_REMAINING,
     ADM_REI_SET_BUDGET,
     ADM_REI_SET_COOLDOWN,
+    ADM_REI_SET_PAYMENT_RELAY,
     ADM_REI_SET_RESET_DAY,
     ADM_REI_SETTINGS,
     ADM_REI_TOGGLE,
@@ -607,6 +608,17 @@ def build_application() -> Application:
     )
     application.add_handler(
         CallbackQueryHandler(adm_rei.on_set_reset_day, pattern=f"^{ADM_REI_SET_RESET_DAY}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            adm_rei.on_set_payment_relay, pattern=f"^{ADM_REI_SET_PAYMENT_RELAY}$"
+        )
+    )
+    # v1.0.0-beta.4 口令发放员点击 "🧧 输入口令"
+    application.add_handler(
+        CallbackQueryHandler(
+            adm_rev.on_relay_enter, pattern=f"^{adm_rev.REL_RELAY_ENTER_PREFIX}\\d+$"
+        )
     )
     application.add_handler(
         CallbackQueryHandler(adm_rei.on_eligibility_panel, pattern=f"^{ADM_REI_ELIG}$")

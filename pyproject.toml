@@ -1,6 +1,6 @@
 [project]
 name = "bccy-bot"
-version = "1.0.0b3"
+version = "1.0.0b4"
 description = "BC-CY-Bot: Telegram bot for one-time invite link审核与签发"
 requires-python = ">=3.11"
 dependencies = [

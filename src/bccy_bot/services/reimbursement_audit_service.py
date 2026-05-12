@@ -11,6 +11,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from html import escape as html_escape
 
 import structlog
 from sqlalchemy import select
@@ -21,7 +22,8 @@ from telegram import (
     InputMediaPhoto,
 )
 from telegram import Bot
-from telegram.error import BadRequest
+from telegram.error import BadRequest, TelegramError
+from telegram.constants import ParseMode
 
 from bccy_bot.db.models.audit_log import AuditLog
 from bccy_bot.db.models.enums import (
@@ -258,9 +260,63 @@ async def _push_to_reviewer(
 
 @dataclass
 class ApprovalIntent:
-    """approve 第一阶段返回：通知审核者发送口令。"""
+    """approve 第一阶段返回。
+
+    relay_dispatched=True 表示已 DM 给口令发放员；handler 不应再设置审核者的 awaiting。
+    relay_dispatched=False 表示 fallback 到原管理员输入；handler 仍按 v1.0.0-beta.3 设置审核者 awaiting。
+    """
     reimbursement_id: int
     amount_cents: int
+    relay_dispatched: bool = False
+    relay_user_id: int | None = None
+
+
+# 口令发放员侧 "🧧 输入口令" 按钮的 callback prefix
+REL_RELAY_ENTER_PREFIX = "rei:rly:"
+
+
+def _relay_entry_keyboard(reimbursement_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("🧧 输入口令", callback_data=f"{REL_RELAY_ENTER_PREFIX}{reimbursement_id}")]]
+    )
+
+
+async def _dispatch_to_relay(
+    bot: Bot,
+    *,
+    relay_user_id: int,
+    request: ReimbursementRequest,
+    reviewer_display: str | None,
+) -> bool:
+    """向口令发放员发 DM + 按钮；返回是否发送成功。"""
+    amount_yuan = reimbursement_settings.cents_to_yuan_display(request.amount_cents)
+    applicant_label = (
+        f"@{request.applicant_username}" if request.applicant_username
+        else f"#{request.applicant_telegram_id}"
+    )
+    text = (
+        f"💸 待发放报销 · #{request.id}\n"
+        f"─────────────────────────\n"
+        f"申请人：{applicant_label}\n"
+        f"金额：{amount_yuan} 元\n"
+        f"审核者：{reviewer_display or '—'}\n\n"
+        f"点击下方按钮进入口令输入状态（5 分钟内有效）。"
+    )
+    try:
+        await bot.send_message(
+            chat_id=relay_user_id,
+            text=text,
+            reply_markup=_relay_entry_keyboard(request.id),
+        )
+        return True
+    except TelegramError as e:
+        log.warning(
+            "rei_relay_dm_failed",
+            relay_user_id=relay_user_id,
+            reimbursement_id=request.id,
+            err=str(e),
+        )
+        return False
 
 
 async def approve_request_step1(
@@ -344,6 +400,35 @@ async def approve_request_step1(
         reviewer_id=reviewer_telegram_id,
         budget_remaining=remaining - request.amount_cents,
     )
+
+    # v1.0.0-beta.4：若配置了口令发放员，DM 给他/她；handler 不再设置审核者 awaiting
+    relay_user_id = await reimbursement_settings.get_payment_relay_telegram_id(session)
+    if relay_user_id and relay_user_id > 0:
+        dispatched = await _dispatch_to_relay(
+            bot,
+            relay_user_id=relay_user_id,
+            request=request,
+            reviewer_display=reviewer_display,
+        )
+        if dispatched:
+            log.info(
+                "rei_relay_dispatched",
+                reimbursement_id=request.id,
+                relay_user_id=relay_user_id,
+            )
+            return ApprovalIntent(
+                reimbursement_id=request.id,
+                amount_cents=request.amount_cents,
+                relay_dispatched=True,
+                relay_user_id=relay_user_id,
+            )
+        # 发送失败：fallback 到审核者输入
+        log.warning(
+            "rei_relay_fallback_to_reviewer",
+            reimbursement_id=request.id,
+            relay_user_id=relay_user_id,
+        )
+
     return ApprovalIntent(reimbursement_id=request.id, amount_cents=request.amount_cents)
 
 
@@ -382,23 +467,32 @@ async def confirm_payment(
         )
     )
 
-    # 转发口令给申请人
+    # 转发口令给申请人（v1.0.0-beta.4：行内代码样式，点击/长按可复制）
     amount_yuan = reimbursement_settings.cents_to_yuan_display(request.amount_cents)
+    text_html = (
+        f"🎁 您的报销已批准并发放！\n"
+        f"金额：{amount_yuan} 元\n\n"
+        f"口令（点击/长按可复制）：\n"
+        f"<code>{html_escape(code)}</code>\n\n"
+        f"请复制此口令在支付宝中兑换。"
+    )
     try:
-        await _send_text(
-            bot,
+        await bot.send_message(
             chat_id=request.applicant_telegram_id,
-            text=(
-                f"🎁 您的报销已批准并发放！\n"
-                f"金额：{amount_yuan} 元\n\n"
-                "请复制下方口令在支付宝兑换：\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"{code}\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            ),
+            text=text_html,
+            parse_mode=ParseMode.HTML,
         )
     except BadRequest as e:
         log.error("rei_payment_send_failed", reimbursement_id=request.id, err=str(e))
+        # 兜底：如果 HTML 解析失败（例如 code 含奇怪 unicode），退回纯文本
+        try:
+            await _send_text(
+                bot,
+                chat_id=request.applicant_telegram_id,
+                text=f"🎁 您的报销已批准并发放！\n金额：{amount_yuan} 元\n\n口令：\n{code}",
+            )
+        except BadRequest:
+            pass
 
     # 编辑审核消息为"已付款"
     await _edit_audit_messages(

@@ -44,6 +44,7 @@ AWAIT_REI_COOLDOWN = "rei_set_cooldown"
 AWAIT_REI_RESET_DAY = "rei_set_reset_day"
 AWAIT_REI_ELIG_FORWARD = "rei_elig_forward"
 AWAIT_REI_OVERRIDE_INPUT = "rei_override_input"
+AWAIT_REI_PAYMENT_RELAY_ID = "rei_set_payment_relay_id"
 
 
 # ---------- 主面板 ----------
@@ -94,7 +95,9 @@ async def on_settings_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         remaining = await reimbursement_settings.get_monthly_remaining_cents(session)
         cd = await reimbursement_settings.get_default_cooldown_days(session)
         reset_day = await reimbursement_settings.get_reset_day(session)
+        relay_id = await reimbursement_settings.get_payment_relay_telegram_id(session)
 
+    relay_text = f"{relay_id}" if relay_id else "未配置（审核者自填口令）"
     text = (
         "📋 报销系统配置\n"
         "─────────────────────────\n"
@@ -104,7 +107,8 @@ async def on_settings_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         f"月预算：{reimbursement_settings.cents_to_yuan_display(budget)} 元\n"
         f"当前剩余：{reimbursement_settings.cents_to_yuan_display(remaining)} 元\n"
         f"冷却天数：{cd} 天\n"
-        f"重置日：每月 {reset_day} 日"
+        f"重置日：每月 {reset_day} 日\n"
+        f"口令发放员：{relay_text}"
     )
     if not is_super:
         text += "\n\nⓘ 仅超级管理员可修改配置项。"
@@ -137,6 +141,22 @@ async def on_set_budget(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "✏️ 请发送月预算（元，整数或最多 2 位小数）。\n"
         "设置后不会立即重置当前剩余，如需立即重置可点【♻️ 重置当前月余额】。\n"
         "发送 /cancel 取消。",
+    )
+
+
+async def on_set_payment_relay(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """[✏️ 设置口令发放员] —— 超管输入一个 Telegram 数字 ID；0 表示取消配置。"""
+    await ack(update)
+    if not await require_super(update, context):
+        return
+    if update.effective_user is None:
+        return
+    set_awaiting(context, update.effective_user.id, AWAIT_REI_PAYMENT_RELAY_ID)
+    await edit_or_reply(
+        update,
+        "✏️ 请发送【口令发放员】的 Telegram 数字 ID（一串数字）。\n"
+        "发送 0 表示取消配置（fallback 到审核者自填口令）。\n"
+        "发送 /cancel 取消本次修改。",
     )
 
 
@@ -366,6 +386,7 @@ async def consume_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bo
         AWAIT_REI_COOLDOWN,
         AWAIT_REI_RESET_DAY,
         AWAIT_REI_OVERRIDE_INPUT,
+        AWAIT_REI_PAYMENT_RELAY_ID,
     ):
         return False
 
@@ -423,6 +444,28 @@ async def consume_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bo
         async with session_scope(context) as session:
             await reimbursement_settings.set_reset_day(session, day)
         await update.message.reply_text(f"✅ 预算重置日已设为每月 {day} 日。")
+        clear_awaiting(context, update.effective_user.id)
+        return True
+
+    if kind == AWAIT_REI_PAYMENT_RELAY_ID:
+        try:
+            tid = int(text)
+            if tid < 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text("⚠️ 请发送非负整数（0 取消配置）。")
+            return True
+        async with session_scope(context) as session:
+            await reimbursement_settings.set_payment_relay_telegram_id(session, tid)
+        if tid == 0:
+            await update.message.reply_text(
+                "✅ 已取消口令发放员配置。审核者通过后将自行输入口令。"
+            )
+        else:
+            await update.message.reply_text(
+                f"✅ 口令发放员已设为 Telegram ID {tid}。\n"
+                "⚠️ 该用户必须**先私聊 Bot 至少一次**，Bot 才能向其发送审核通知。"
+            )
         clear_awaiting(context, update.effective_user.id)
         return True
 
