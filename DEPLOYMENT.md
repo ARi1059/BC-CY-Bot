@@ -89,20 +89,21 @@
 
 ### 2.1 系统包
 
-```bash
-sudo apt update
-sudo apt install -y \
-  python3 python3-venv python3-pip \
-  postgresql postgresql-contrib \
-  build-essential libpq-dev \
-  git curl
-```
-
-验证 Python 版本：
+一行命令装齐所有依赖（直接整行复制粘贴，**不要**只复制中间几个包名 —— 反斜杠续行容易在粘贴时丢首行）：
 
 ```bash
-python3 --version    # 应 ≥ 3.11
+sudo apt update && sudo apt install -y python3 python3-venv python3-pip postgresql postgresql-contrib build-essential libpq-dev git curl
 ```
+
+验证：
+
+```bash
+python3 --version                  # 应 ≥ 3.11
+psql --version                     # 应 ≥ 15
+systemctl is-active postgresql     # 应输出 active
+```
+
+> 💡 Debian 12 自带 Python 3.11；Debian 11 / Ubuntu 22.04 自带 Python 3.10，可能需要从 deadsnakes PPA 或源码装 3.11。
 
 ### 2.2 PostgreSQL：建库 + 建账号
 
