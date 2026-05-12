@@ -8,6 +8,12 @@
 并提供完整的 **报销系统**（wizard + 审核 + 红包口令转发 + 月预算 + 周/月报）。
 
 > 当前版本 **v1.0.0-beta.2**（报销金额按邀请人差异化），详细变更见 [CHANGELOG.md](CHANGELOG.md)。
+>
+> **📘 上手三件套**：
+> - [搭建文档 DEPLOYMENT.md](DEPLOYMENT.md) — 从零部署到生产
+> - [操作手册 OPERATIONS.md](OPERATIONS.md) — 所有业务流程 + 流程图
+> - [E2E 测试清单 TESTING.md](TESTING.md) — 上线前逐项验证
+>
 > 详细需求见 [REQUIREMENTS.md](REQUIREMENTS.md)，开发过程见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
 
 ---
@@ -192,6 +198,8 @@ export INITIAL_SUPER_ADMIN_ID=...
 BC-CY-Bot/
 ├── REQUIREMENTS.md             需求规格
 ├── DEVELOPMENT_PLAN.md         开发计划与执行日志
+├── DEPLOYMENT.md               搭建文档（从零部署）
+├── OPERATIONS.md               操作手册（含所有流程图）
 ├── CHANGELOG.md                版本变更记录
 ├── README.md                   本文件
 ├── TESTING.md                  端到端联调清单
