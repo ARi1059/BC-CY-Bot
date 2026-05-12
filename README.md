@@ -14,7 +14,7 @@
 > - [操作手册 OPERATIONS.md](OPERATIONS.md) — 所有业务流程 + 流程图
 > - [E2E 测试清单 TESTING.md](TESTING.md) — 上线前逐项验证
 >
-> 详细需求见 [REQUIREMENTS.md](REQUIREMENTS.md)，开发过程见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)。
+> 详细需求规格见 [REQUIREMENTS.md](REQUIREMENTS.md)。
 
 ---
 
@@ -197,7 +197,6 @@ export INITIAL_SUPER_ADMIN_ID=...
 ```
 BC-CY-Bot/
 ├── REQUIREMENTS.md             需求规格
-├── DEVELOPMENT_PLAN.md         开发计划与执行日志
 ├── DEPLOYMENT.md               搭建文档（从零部署）
 ├── OPERATIONS.md               操作手册（含所有流程图）
 ├── CHANGELOG.md                版本变更记录

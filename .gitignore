@@ -96,4 +96,5 @@ temp/
 node_modules/
 
 # ===== Claude / AI Tools (local) =====
-.claude/settings.local.json
+.claude/
+CLAUDE.md
