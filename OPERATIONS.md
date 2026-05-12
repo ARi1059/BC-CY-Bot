@@ -75,9 +75,9 @@ flowchart LR
   subgraph TG[Telegram 平台]
     Bot[BC-CY-Bot]
     Grp[目标群组]
-    LogCh[日志频道]
-    RptCh[出击报告频道]
-    EligCh[报销资格群/频道]
+    LogCh[日志频道<br/>Bot 推送]
+    RptCh[出击报告频道<br/>Bot 转发]
+    EligCh["报销资格条目<br/>广播频道 × N + 资格群 × N<br/>AND 校验"]
   end
 
   subgraph DB[PostgreSQL]
@@ -479,7 +479,7 @@ flowchart TD
   L5 -->|不足| MsgBudgetLow[本月预算不足]
   L5 -->|足够| EligCheck[资格群/频道成员校验]
 
-  EligCheck --> EligOK{至少 1 个资格群在?}
+  EligCheck --> EligOK{所有资格条目都在?}
   EligOK -->|否| MsgEligFail[您不符合报销资格]
   EligOK -->|是| CreateWizard["amount_cents=inviter.tier<br/>创建 reimbursement_request<br/>wizard_step=1"]
 
@@ -520,7 +520,7 @@ flowchart TD
 | 3 | 没有进行中报销 | 已有一份报销 | 若是 wizard 态会续上 |
 | 4 | 冷却时间已过 | 还需等待 X 天 | 默认 7 天，可按用户覆盖 |
 | 5 | 月预算 ≥ inviter 档位金额 | 本月预算不足 | 等下月或调档位 |
-| 6 | 资格群/频道至少在 1 个 | 您不符合报销资格 | 通过 `getChatMember` 检查；缓存 5 分钟 |
+| 6 | **所有** active 资格群/频道（含广播频道）都在 | 您不符合报销资格 | AND 语义，缺一即拒；`getChatMember` 检查；成功缓存 5 分钟 |
 
 ### 金额来源
 
@@ -801,6 +801,44 @@ flowchart LR
 `/admin → [📋 出击报告频道]`：仅在 `approve_application` 时**转发**申请人提交的出击报告文本（如果材料里有的话）。
 
 每次尝试写一行 `attack_report_forwards`（即使 skipped 也写），便于审计："为什么这条没转发？" `status` 字段会给出原因。
+
+### 报销资格条目（广播频道 + 资格群）
+
+`/admin → [💰 报销管理] → [🎯 资格列表]`：
+
+| 子类型 | 用途 | Bot 行为 |
+|---|---|---|
+| 广播频道（对外大众）| 运营自己发课程通知 / 公告等内容 | **不写入**；仅 `getChatMember` 校验用户是否订阅 |
+| 资格群（内部）| 学员群 / 讨论群 等 | 同上 |
+
+二者在数据层完全等价 —— 都存在 `eligibility_chats` 表，类型字段 `chat_type ∈ {channel, group, supergroup}`。本系统**不**区别对待两种"用途"，只校验"用户是不是这个 chat 的活跃成员"。
+
+#### AND 语义（缺一即拒）
+
+```mermaid
+flowchart LR
+  Trigger[/用户发 /reimburse/] --> Check["遍历所有 active 资格条目<br/>对每个调 getChatMember"]
+  Check --> EachChat{每个 chat 用户是否在?}
+  EachChat -->|全在| Pass[✅ 通过资格校验]
+  EachChat -->|任一不在| Fail["❌ 不通过<br/>missing_chat_names 记录缺哪个"]
+
+  classDef ok fill:#dfd,stroke:#0a0
+  classDef bad fill:#fdd,stroke:#a00
+  class Pass ok
+  class Fail bad
+```
+
+> ⚠️ 这意味着：如果你有 2 个广播频道 + 1 个资格群，用户必须**同时**订阅这 3 项才能领报销。
+> 想临时放宽 —— 在面板里把对应条目"停用"（is_active=false），保留记录不参与校验。
+
+#### Bot 权限要求
+
+| chat 类型 | Bot 必须的权限 |
+|---|---|
+| 公开频道/群 | 普通成员即可（任何人都能 `getChatMember`）|
+| 私有频道/群 | **管理员**（私有 chat 仅管理员能查成员）|
+
+如果配错权限，校验时会落到 `errored` 列表（log 里出现 `eligibility_check_forbidden`），用户被视为不在 = 拒绝报销。
 
 ---
 
