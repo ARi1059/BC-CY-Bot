@@ -41,7 +41,9 @@ def _next_chat_id() -> int:
     return _chat_counter
 
 
-async def _seed_approved_app(session, applicant_id: int = 100) -> Application:
+async def _seed_approved_app(
+    session, applicant_id: int = 100, tier_cents: int = 10000
+) -> Application:
     g = Group(telegram_chat_id=_next_chat_id(), name="g")
     session.add(g)
     await session.flush()
@@ -52,6 +54,7 @@ async def _seed_approved_app(session, applicant_id: int = 100) -> Application:
         target_group_id=g.id,
         required_materials=[MAT_REPORT],
         review_mode=REVIEW_MODE_SELF,
+        reimbursement_tier_cents=tier_cents,
         is_active=True,
     )
     session.add(inv)
@@ -69,9 +72,9 @@ async def _seed_approved_app(session, applicant_id: int = 100) -> Application:
     return app
 
 
-async def _enable_reimbursement(session, *, amount=5000, budget=500000, remaining=500000, cd=7):
+async def _enable_reimbursement(session, *, budget=500000, remaining=500000, cd=7):
+    """开启总开关 + 月预算 + 冷却。报销金额改由邀请人级 tier 提供，这里不再涉及。"""
     await reimbursement_settings.set_enabled(session, True)
-    await reimbursement_settings.set_fixed_amount_cents(session, amount)
     await reimbursement_settings.set_monthly_budget_cents(session, budget)
     await reimbursement_settings.set_monthly_remaining_cents(session, remaining)
     await reimbursement_settings.set_default_cooldown_days(session, cd)
@@ -89,12 +92,31 @@ async def test_precheck_disabled_when_global_off(session):
 
 
 @pytest.mark.asyncio
-async def test_precheck_disabled_when_amount_zero(session):
+async def test_precheck_disabled_when_budget_zero(session):
     await _seed_approved_app(session)
     await reimbursement_settings.set_enabled(session, True)
-    # amount = 0
+    # 月预算 = 0
     pre = await rwz.precheck(session, applicant_telegram_id=100)
     assert pre.reason_code == "disabled"
+
+
+@pytest.mark.asyncio
+async def test_precheck_no_inviter_tier_when_application_has_no_inviter(session):
+    """如果 application.inviter_id 为空 → no_inviter_tier。"""
+    # 构造一个无邀请人 ID 的 approved 申请
+    app = Application(
+        applicant_telegram_id=100,
+        applicant_username="u",
+        inviter_id=None,
+        status=APP_STATUS_APPROVED,
+        wizard_step=0,
+        reviewed_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+    )
+    session.add(app)
+    await session.flush()
+    await _enable_reimbursement(session)
+    pre = await rwz.precheck(session, applicant_telegram_id=100)
+    assert pre.reason_code == "no_inviter_tier"
 
 
 @pytest.mark.asyncio
@@ -173,28 +195,40 @@ async def test_precheck_cooldown_uses_user_override(session):
 
 @pytest.mark.asyncio
 async def test_precheck_budget_insufficient(session):
-    await _seed_approved_app(session)
-    # 余额 30 元，固定金额 50 元 → 不足
-    await _enable_reimbursement(session, amount=5000, budget=10000, remaining=3000)
+    # 邀请人档位 100 元，月预算余 30 元 → 不足
+    await _seed_approved_app(session, tier_cents=10000)
+    await _enable_reimbursement(session, budget=10000, remaining=3000)
     pre = await rwz.precheck(session, applicant_telegram_id=100)
     assert pre.reason_code == "budget_insufficient"
 
 
 @pytest.mark.asyncio
 async def test_precheck_ok_path(session):
-    await _seed_approved_app(session)
+    """邀请人档位 100 元 → precheck amount_cents == 10000。"""
+    await _seed_approved_app(session, tier_cents=10000)
     await _enable_reimbursement(session)
     pre = await rwz.precheck(session, applicant_telegram_id=100)
     assert pre.ok is True
     assert pre.application_id is not None
-    assert pre.fixed_amount_cents == 5000
+    assert pre.amount_cents == 10000
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tier_cents", [10000, 15000, 20000])
+async def test_precheck_uses_inviter_tier(session, tier_cents):
+    """三档分别配置，precheck 应原样返回。"""
+    await _seed_approved_app(session, tier_cents=tier_cents)
+    await _enable_reimbursement(session)
+    pre = await rwz.precheck(session, applicant_telegram_id=100)
+    assert pre.ok is True
+    assert pre.amount_cents == tier_cents
 
 
 # ---------- Wizard 状态机 ----------
 
 
 async def _make_wizard(session) -> tuple:
-    app = await _seed_approved_app(session)
+    app = await _seed_approved_app(session, tier_cents=10000)
     await _enable_reimbursement(session)
     r = await rwz.create_request(
         session,
@@ -202,7 +236,7 @@ async def _make_wizard(session) -> tuple:
         applicant_username="u",
         applicant_display_name="U",
         application_id=app.id,
-        fixed_amount_cents=5000,
+        amount_cents=10000,
     )
     return app, r
 

@@ -207,13 +207,13 @@ async def _enter_reimburse(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             applicant_username=user.username,
             applicant_display_name=user.full_name,
             application_id=pre.application_id,
-            fixed_amount_cents=pre.fixed_amount_cents,
+            amount_cents=pre.amount_cents,
         )
         info = rei_wizard.resolve_step(request)
 
     intro = (
         f"💰 报销申请开始\n"
-        f"金额：{reimbursement_settings.cents_to_yuan_display(pre.fixed_amount_cents)} 元\n"
+        f"金额：{reimbursement_settings.cents_to_yuan_display(pre.amount_cents)} 元\n"
         f"请按提示提交 {rei_wizard.TOTAL_STEPS} 项材料。"
     )
     await update.effective_message.reply_text(intro)

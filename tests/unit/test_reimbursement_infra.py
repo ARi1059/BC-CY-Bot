@@ -65,7 +65,6 @@ async def _seed_approved_application(session, applicant_id: int = 100):
 @pytest.mark.asyncio
 async def test_settings_defaults_when_empty(session):
     assert (await reimbursement_settings.is_enabled(session)) is False
-    assert (await reimbursement_settings.get_fixed_amount_cents(session)) == 0
     assert (await reimbursement_settings.get_monthly_budget_cents(session)) == 0
     assert (await reimbursement_settings.get_default_cooldown_days(session)) == 7
     assert (await reimbursement_settings.get_reset_day(session)) == 1
@@ -74,13 +73,11 @@ async def test_settings_defaults_when_empty(session):
 @pytest.mark.asyncio
 async def test_settings_round_trip(session):
     await reimbursement_settings.set_enabled(session, True)
-    await reimbursement_settings.set_fixed_amount_cents(session, 5000)
     await reimbursement_settings.set_monthly_budget_cents(session, 500000)
     await reimbursement_settings.set_default_cooldown_days(session, 14)
     await reimbursement_settings.set_reset_day(session, 5)
 
     assert (await reimbursement_settings.is_enabled(session)) is True
-    assert (await reimbursement_settings.get_fixed_amount_cents(session)) == 5000
     assert (await reimbursement_settings.get_monthly_budget_cents(session)) == 500000
     assert (await reimbursement_settings.get_default_cooldown_days(session)) == 14
     assert (await reimbursement_settings.get_reset_day(session)) == 5
@@ -98,9 +95,6 @@ async def test_settings_clamp(session):
     assert (await reimbursement_settings.get_default_cooldown_days(session)) == 90
     await reimbursement_settings.set_default_cooldown_days(session, 0)
     assert (await reimbursement_settings.get_default_cooldown_days(session)) == 1
-    # 金额/预算不可为负
-    await reimbursement_settings.set_fixed_amount_cents(session, -100)
-    assert (await reimbursement_settings.get_fixed_amount_cents(session)) == 0
 
 
 def test_yuan_text_to_cents_parses():
@@ -120,6 +114,69 @@ def test_yuan_text_to_cents_parses():
 def test_cents_to_yuan_display():
     assert reimbursement_settings.cents_to_yuan_display(5000) == "50.00"
     assert reimbursement_settings.cents_to_yuan_display(123) == "1.23"
+
+
+# ---------- inviter tier 档位 ----------
+
+
+@pytest.mark.asyncio
+async def test_inviter_tier_defaults_to_100_yuan(session):
+    """新建 inviter 时未指定档位 → 默认 100 元（10000 分）。"""
+    from bccy_bot.db.models.group import Group
+    from bccy_bot.repositories import group_repo, inviter_repo
+
+    g = Group(telegram_chat_id=-100999, name="t")
+    session.add(g)
+    await session.flush()
+    inv = await inviter_repo.create(
+        session,
+        telegram_user_id=None,
+        display_name="t1",
+        group_label="T",
+        target_group_id=g.id,
+        required_materials=[MAT_REPORT],
+        review_mode=REVIEW_MODE_SELF,
+    )
+    assert inv.reimbursement_tier_cents == 10000
+
+
+@pytest.mark.asyncio
+async def test_inviter_tier_create_with_value_and_update_tier(session):
+    """显式传 150 元 → 然后调整到 200 元；非法值会被拒绝。"""
+    from bccy_bot.db.models.group import Group
+    from bccy_bot.repositories import inviter_repo
+
+    g = Group(telegram_chat_id=-100998, name="t")
+    session.add(g)
+    await session.flush()
+    inv = await inviter_repo.create(
+        session,
+        telegram_user_id=None,
+        display_name="t2",
+        group_label="T",
+        target_group_id=g.id,
+        required_materials=[MAT_REPORT],
+        review_mode=REVIEW_MODE_SELF,
+        reimbursement_tier_cents=15000,
+    )
+    assert inv.reimbursement_tier_cents == 15000
+
+    await inviter_repo.update_tier(session, inv, 20000)
+    assert inv.reimbursement_tier_cents == 20000
+
+    with pytest.raises(ValueError):
+        await inviter_repo.update_tier(session, inv, 12345)
+    with pytest.raises(ValueError):
+        await inviter_repo.create(
+            session,
+            telegram_user_id=None,
+            display_name="bad",
+            group_label="T",
+            target_group_id=g.id,
+            required_materials=[MAT_REPORT],
+            review_mode=REVIEW_MODE_SELF,
+            reimbursement_tier_cents=99999,
+        )
 
 
 # ---------- eligibility_chat_repo ----------

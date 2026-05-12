@@ -28,6 +28,7 @@ from bccy_bot.db.models.enums import (
     REI_STATUS_PENDING,
     REI_STATUS_WIZARD,
 )
+from bccy_bot.db.models.inviter import Inviter
 from bccy_bot.db.models.reimbursement_material import ReimbursementMaterial
 from bccy_bot.db.models.reimbursement_request import ReimbursementRequest
 from bccy_bot.repositories import (
@@ -61,10 +62,11 @@ class PreCheckResult:
     ok: bool
     reason_code: str  # 'ok' | 'disabled' | 'no_approved_app' | 'eligibility_failed'
                      # | 'cooldown' | 'budget_insufficient' | 'has_active_request'
+                     # | 'no_inviter_tier'
     user_message: str
     application_id: int | None = None  # ok 路径：使用的入群审核 application
     cooldown_days_remaining: int | None = None  # cooldown 路径
-    fixed_amount_cents: int = 0
+    amount_cents: int = 0  # 报销金额（来自申请人所属邀请人的档位）
 
 
 async def precheck(
@@ -86,13 +88,12 @@ async def precheck(
             user_message="报销功能当前未启用，请联系管理员。",
         )
 
-    fixed_amount = await reimbursement_settings.get_fixed_amount_cents(session)
     monthly_budget = await reimbursement_settings.get_monthly_budget_cents(session)
-    if fixed_amount <= 0 or monthly_budget <= 0:
+    if monthly_budget <= 0:
         return PreCheckResult(
             ok=False,
             reason_code="disabled",
-            user_message="报销功能尚未配置完成（金额/月预算未设），请联系管理员。",
+            user_message="报销功能尚未配置完成（月预算未设），请联系管理员。",
         )
 
     # 2. 必须有 approved 入群审核
@@ -116,6 +117,22 @@ async def precheck(
             user_message="您尚未通过入群审核，无法申请报销。",
         )
 
+    # 2.5 该申请对应的邀请人必须存在，并据此决定报销金额
+    if approved.inviter_id is None:
+        return PreCheckResult(
+            ok=False,
+            reason_code="no_inviter_tier",
+            user_message="该入群申请缺少邀请人信息，无法确定报销金额，请联系管理员。",
+        )
+    inviter = await session.get(Inviter, approved.inviter_id)
+    if inviter is None:
+        return PreCheckResult(
+            ok=False,
+            reason_code="no_inviter_tier",
+            user_message="该入群申请对应的邀请人已被删除，请联系管理员。",
+        )
+    amount_cents = int(inviter.reimbursement_tier_cents)
+
     # 3. 是否已有进行中的报销
     active = await reimbursement_repo.get_active_for_user(session, applicant_telegram_id)
     if active is not None:
@@ -124,7 +141,7 @@ async def precheck(
             reason_code="has_active_request",
             user_message="您已有一份进行中的报销申请，请先完成或取消。",
             application_id=approved.id,
-            fixed_amount_cents=fixed_amount,
+            amount_cents=amount_cents,
         )
 
     # 4. 冷却时间
@@ -151,13 +168,13 @@ async def precheck(
 
     # 5. 月预算是否足够再发一次
     remaining_budget = await reimbursement_settings.get_monthly_remaining_cents(session)
-    if remaining_budget < fixed_amount:
+    if remaining_budget < amount_cents:
         return PreCheckResult(
             ok=False,
             reason_code="budget_insufficient",
             user_message=(
                 f"本月预算余额（{reimbursement_settings.cents_to_yuan_display(remaining_budget)} 元）"
-                f"不足以支付一次报销（{reimbursement_settings.cents_to_yuan_display(fixed_amount)} 元），"
+                f"不足以支付一次报销（{reimbursement_settings.cents_to_yuan_display(amount_cents)} 元），"
                 "请月初再试。"
             ),
         )
@@ -167,7 +184,7 @@ async def precheck(
         reason_code="ok",
         user_message="",
         application_id=approved.id,
-        fixed_amount_cents=fixed_amount,
+        amount_cents=amount_cents,
     )
 
 
@@ -214,16 +231,16 @@ async def create_request(
     applicant_username: str | None,
     applicant_display_name: str | None,
     application_id: int,
-    fixed_amount_cents: int,
+    amount_cents: int,
 ) -> ReimbursementRequest:
-    """precheck 通过后调用。直接进入 wizard_step=1。"""
+    """precheck 通过后调用。直接进入 wizard_step=1。amount_cents 来自该申请人邀请人的档位快照。"""
     return await reimbursement_repo.create_wizard(
         session,
         applicant_telegram_id=applicant_telegram_id,
         applicant_username=applicant_username,
         applicant_display_name=applicant_display_name,
         application_id=application_id,
-        amount_cents=fixed_amount_cents,
+        amount_cents=amount_cents,
     )
 
 

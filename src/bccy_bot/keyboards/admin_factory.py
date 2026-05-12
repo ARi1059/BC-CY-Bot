@@ -4,6 +4,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bccy_bot.db.models.admin import Admin
 from bccy_bot.db.models.blacklist import Blacklist
+from bccy_bot.db.models.enums import REI_TIER_LABELS, REI_TIER_VALUES_CENTS
 from bccy_bot.db.models.group import Group
 from bccy_bot.db.models.inviter import Inviter
 from bccy_bot.keyboards.admin_callbacks import (
@@ -31,7 +32,6 @@ from bccy_bot.keyboards.admin_callbacks import (
     ADM_REI_RESEND_AUDIT_PREFIX,
     ADM_REI_RESEND_PAYMENT_PREFIX,
     ADM_REI_RESET_REMAINING,
-    ADM_REI_SET_AMOUNT,
     ADM_REI_SET_BUDGET,
     ADM_REI_SET_COOLDOWN,
     ADM_REI_SET_RESET_DAY,
@@ -46,12 +46,15 @@ from bccy_bot.keyboards.admin_callbacks import (
     ADM_INV_ADD_CANCEL,
     ADM_INV_ADD_CONFIRM,
     ADM_INV_ADD_PICK_GRP_PREFIX,
+    ADM_INV_ADD_PICK_TIER_PREFIX,
     ADM_INV_ADD_SET_MODE_PREFIX,
     ADM_INV_ADD_TOGGLE_MAT_PREFIX,
     ADM_INV_LIST,
     ADM_INV_LIST_PREFIX,
     ADM_INV_REMOVE_CONFIRM_PREFIX,
     ADM_INV_REMOVE_PREFIX,
+    ADM_INV_SET_TIER_OPEN_PREFIX,
+    ADM_INV_SET_TIER_VALUE_PREFIX,
     ADM_INV_TOGGLE_PREFIX,
     ADM_KEYS,
     ADM_LOG_CHANNEL,
@@ -159,7 +162,8 @@ def inviter_list_keyboard(inviters: list[Inviter], page: int = 0) -> InlineKeybo
     rows: list[list[InlineKeyboardButton]] = []
     for inv in chunk:
         status_icon = "✅" if inv.is_active else "⏸"
-        label = f"{status_icon} {inv.display_name} · {inv.group_label}"
+        tier_label = REI_TIER_LABELS.get(inv.reimbursement_tier_cents, f"{inv.reimbursement_tier_cents/100:.0f}元")
+        label = f"{status_icon} {inv.display_name} · {inv.group_label} · 💰{tier_label}"
         rows.append(
             [
                 InlineKeyboardButton(label, callback_data=ADM_INV_LIST),
@@ -170,11 +174,35 @@ def inviter_list_keyboard(inviters: list[Inviter], page: int = 0) -> InlineKeybo
                 InlineKeyboardButton("🗑", callback_data=f"{ADM_INV_REMOVE_PREFIX}{inv.id}"),
             ]
         )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"💰 调档位（当前 {tier_label}）",
+                    callback_data=f"{ADM_INV_SET_TIER_OPEN_PREFIX}{inv.id}",
+                ),
+            ]
+        )
     pager = _pager(ADM_INV_LIST_PREFIX, page, len(inviters))
     if pager:
         rows.append(pager)
     rows.append([InlineKeyboardButton("➕ 添加邀请人", callback_data=ADM_INV_ADD)])
     rows.append(_back_row())
+    return InlineKeyboardMarkup(rows)
+
+
+def inviter_tier_picker_keyboard(inviter_id: int) -> InlineKeyboardMarkup:
+    """编辑某邀请人档位的子键盘：三档 + 返回。"""
+    rows: list[list[InlineKeyboardButton]] = []
+    for cents in REI_TIER_VALUES_CENTS:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"💰 {REI_TIER_LABELS[cents]}",
+                    callback_data=f"{ADM_INV_SET_TIER_VALUE_PREFIX}{inviter_id}:{cents}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton("« 返回邀请人列表", callback_data=ADM_INV_LIST)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -233,7 +261,23 @@ def inviter_add_step5_pick_mode_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def inviter_add_step6_confirm_keyboard() -> InlineKeyboardMarkup:
+def inviter_add_step6_pick_tier_keyboard() -> InlineKeyboardMarkup:
+    """添加 wizard 步骤 7/7：选择该邀请人的报销档位。"""
+    rows: list[list[InlineKeyboardButton]] = []
+    for cents in REI_TIER_VALUES_CENTS:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"💰 {REI_TIER_LABELS[cents]}",
+                    callback_data=f"{ADM_INV_ADD_PICK_TIER_PREFIX}{cents}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton("« 取消", callback_data=ADM_INV_ADD_CANCEL)])
+    return InlineKeyboardMarkup(rows)
+
+
+def inviter_add_step7_confirm_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("✅ 确认创建", callback_data=ADM_INV_ADD_CONFIRM)],
@@ -442,9 +486,6 @@ def reimbursement_settings_keyboard(is_super: bool, enabled: bool) -> InlineKeyb
                     callback_data=ADM_REI_TOGGLE,
                 )
             ]
-        )
-        rows.append(
-            [InlineKeyboardButton("✏️ 设置固定金额", callback_data=ADM_REI_SET_AMOUNT)]
         )
         rows.append(
             [InlineKeyboardButton("✏️ 设置月预算", callback_data=ADM_REI_SET_BUDGET)]

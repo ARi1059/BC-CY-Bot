@@ -5,6 +5,43 @@
 
 ---
 
+## [1.0.0-beta.2] - 2026-05-12
+
+报销金额从"全局一档"切换为"按邀请人差异化"。每位邀请人在 100 / 150 / 200 元三档中由超级管理员选定其一；
+申请人 `/reimburse` 时自动按其入群邀请人的档位结算，不再让申请人选金额。
+
+### Added
+- `inviters.reimbursement_tier_cents` 新列（NOT NULL，server_default `10000` = 100 元），新建迁移 `a1b2c3d4e5f6`
+- `REI_TIER_VALUES_CENTS = (10000, 15000, 20000)` 与 `REI_TIER_LABELS` 常量（写死，不允许任意金额）
+- `inviter_repo.update_tier(session, inviter, cents)` 辅助函数，含三档校验
+- 邀请人添加 wizard 新增"步骤 7/7 · 选择报销档位"，对应 callback `admin:inviters:at:<cents>`
+- 邀请人管理列表每行新增「💰 调档位」子键盘（callback `admin:inviters:to:<id>` 打开，`admin:inviters:tv:<id>:<cents>` 落库）
+- 单元测试：`test_inviter_tier_defaults_to_100_yuan`、`test_inviter_tier_create_with_value_and_update_tier`、`test_precheck_uses_inviter_tier`（参数化覆盖三档）、`test_precheck_no_inviter_tier_when_application_has_no_inviter`
+
+### Changed
+- `precheck()` 通过 `application.inviter_id → inviter.reimbursement_tier_cents` 取金额；
+  `PreCheckResult.fixed_amount_cents` 改名为 `amount_cents`
+- 报销主面板与系统配置面板显示"金额档位：由各邀请人独立设定（100/150/200 元）"，指引到「🎓 邀请人管理」
+- 邀请人列表每行的标签按钮文案带上"💰{tier}元"，肉眼可读
+
+### Removed
+- 全局 `SK_REI_FIXED_AMOUNT_CENTS` 设置项 + `get/set_fixed_amount_cents` 辅助函数
+- 报销系统配置面板的「✏️ 设置固定金额」按钮、`AWAIT_REI_AMOUNT` 状态、`on_set_amount` 处理器
+- `test_settings_*` 中针对 fixed_amount 的断言；保留新增的 inviter tier 用例
+- 已部署实例升级时，migration 一并 `DELETE FROM settings WHERE key='reimbursement_fixed_amount_cents'`
+
+### Upgrade
+```bash
+git pull
+git checkout v1.0.0-beta.2
+docker compose build bot
+docker compose up -d bot
+docker compose logs -f bot   # 确认 alembic upgrade head 到 a1b2c3d4e5f6
+```
+升级后请在「🎓 邀请人管理」检查每位邀请人的档位（默认 100 元），按需调整。
+
+---
+
 ## [1.0.0-beta.1] - 2026-05-12
 
 首个公开 Beta。完整覆盖 v1 入群审核（M0–M10）与 v2 报销系统（M11–M14），
@@ -67,4 +104,5 @@ docker compose logs -f bot   # 等待 super_admin_ensured + alembic upgrade head
 
 ---
 
+[1.0.0-beta.2]: https://github.com/ARi1059/BC-CY-Bot/releases/tag/v1.0.0-beta.2
 [1.0.0-beta.1]: https://github.com/ARi1059/BC-CY-Bot/releases/tag/v1.0.0-beta.1

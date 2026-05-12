@@ -24,11 +24,14 @@ ADM_INV_ADD = "admin:inviters:add"
 ADM_INV_ADD_PICK_GRP_PREFIX = "admin:inviters:ag:"  # + group_id
 ADM_INV_ADD_TOGGLE_MAT_PREFIX = "admin:inviters:am:"  # + material short code (b/g/r)
 ADM_INV_ADD_SET_MODE_PREFIX = "admin:inviters:as:"  # + 'self' or 'deleg'
+ADM_INV_ADD_PICK_TIER_PREFIX = "admin:inviters:at:"  # + tier_cents (10000/15000/20000)
 ADM_INV_ADD_CONFIRM = "admin:inviters:ac"
 ADM_INV_ADD_CANCEL = "admin:inviters:ax"
 ADM_INV_TOGGLE_PREFIX = "admin:inviters:tg:"  # + id
 ADM_INV_REMOVE_PREFIX = "admin:inviters:rm:"  # + id
 ADM_INV_REMOVE_CONFIRM_PREFIX = "admin:inviters:rmc:"  # + id
+ADM_INV_SET_TIER_OPEN_PREFIX = "admin:inviters:to:"   # + inv_id  打开档位选择子键盘
+ADM_INV_SET_TIER_VALUE_PREFIX = "admin:inviters:tv:"  # + inv_id:tier_cents
 
 # === Blacklist ===
 ADM_BL_LIST = "admin:bl"
@@ -65,7 +68,6 @@ ADM_REI = "admin:rei"
 # Settings (super-only mutations)
 ADM_REI_SETTINGS = "admin:rei:s"
 ADM_REI_TOGGLE = "admin:rei:s:tog"
-ADM_REI_SET_AMOUNT = "admin:rei:s:amt"
 ADM_REI_SET_BUDGET = "admin:rei:s:bdg"
 ADM_REI_RESET_REMAINING = "admin:rei:s:rst"
 ADM_REI_SET_COOLDOWN = "admin:rei:s:cd"
@@ -144,9 +146,25 @@ def parse_inv_list_page(d: str) -> int | None: return _parse_int_suffix(d, ADM_I
 def parse_inv_add_pick_grp(d: str) -> int | None: return _parse_int_suffix(d, ADM_INV_ADD_PICK_GRP_PREFIX)
 def parse_inv_add_toggle_mat(d: str) -> str | None: return _parse_str_suffix(d, ADM_INV_ADD_TOGGLE_MAT_PREFIX)
 def parse_inv_add_set_mode(d: str) -> str | None: return _parse_str_suffix(d, ADM_INV_ADD_SET_MODE_PREFIX)
+def parse_inv_add_pick_tier(d: str) -> int | None: return _parse_int_suffix(d, ADM_INV_ADD_PICK_TIER_PREFIX)
 def parse_inv_toggle(d: str) -> int | None: return _parse_int_suffix(d, ADM_INV_TOGGLE_PREFIX)
 def parse_inv_remove(d: str) -> int | None: return _parse_int_suffix(d, ADM_INV_REMOVE_PREFIX)
 def parse_inv_remove_confirm(d: str) -> int | None: return _parse_int_suffix(d, ADM_INV_REMOVE_CONFIRM_PREFIX)
+def parse_inv_set_tier_open(d: str) -> int | None: return _parse_int_suffix(d, ADM_INV_SET_TIER_OPEN_PREFIX)
+
+
+def parse_inv_set_tier_value(d: str) -> tuple[int, int] | None:
+    """解析 admin:inviters:tv:<inv_id>:<tier_cents> → (inv_id, tier_cents)。"""
+    if not d.startswith(ADM_INV_SET_TIER_VALUE_PREFIX):
+        return None
+    rest = d[len(ADM_INV_SET_TIER_VALUE_PREFIX):]
+    parts = rest.split(":")
+    if len(parts) != 2:
+        return None
+    try:
+        return int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
 
 def parse_bl_list_page(d: str) -> int | None: return _parse_int_suffix(d, ADM_BL_LIST_PREFIX)
 def parse_bl_remove(d: str) -> int | None: return _parse_int_suffix(d, ADM_BL_REMOVE_PREFIX)

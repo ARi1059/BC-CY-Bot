@@ -98,8 +98,19 @@ REI_STATUSES = (
 
 # 报销系统 settings keys
 SK_REI_GLOBAL_ENABLED = "reimbursement_global_enabled"           # 'true' / 'false'
-SK_REI_FIXED_AMOUNT_CENTS = "reimbursement_fixed_amount_cents"   # int, 单次报销金额（分）
 SK_REI_MONTHLY_BUDGET_CENTS = "reimbursement_monthly_budget_cents"     # int, 月预算（分）
 SK_REI_MONTHLY_REMAINING_CENTS = "reimbursement_monthly_remaining_cents"  # int, 当前余额
 SK_REI_BUDGET_RESET_DAY = "reimbursement_budget_reset_day"       # int, 1~28，每月哪天 00:00 重置
 SK_REI_DEFAULT_COOLDOWN_DAYS = "reimbursement_default_cooldown_days"  # int, 默认 7
+
+# 报销档位（写死三档，由邀请人级配置选择其一）
+REI_TIER_100_CENTS = 10000
+REI_TIER_150_CENTS = 15000
+REI_TIER_200_CENTS = 20000
+REI_TIER_VALUES_CENTS: tuple[int, ...] = (REI_TIER_100_CENTS, REI_TIER_150_CENTS, REI_TIER_200_CENTS)
+REI_TIER_LABELS: dict[int, str] = {
+    REI_TIER_100_CENTS: "100 元",
+    REI_TIER_150_CENTS: "150 元",
+    REI_TIER_200_CENTS: "200 元",
+}
+REI_TIER_DEFAULT_CENTS = REI_TIER_100_CENTS

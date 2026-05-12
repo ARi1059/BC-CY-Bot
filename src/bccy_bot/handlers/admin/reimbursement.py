@@ -39,7 +39,6 @@ log = structlog.get_logger()
 
 
 # === awaiting state kinds ===
-AWAIT_REI_AMOUNT = "rei_set_amount"
 AWAIT_REI_BUDGET = "rei_set_budget"
 AWAIT_REI_COOLDOWN = "rei_set_cooldown"
 AWAIT_REI_RESET_DAY = "rei_set_reset_day"
@@ -58,7 +57,6 @@ async def on_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     async with session_scope(context) as session:
         enabled = await reimbursement_settings.is_enabled(session)
-        amount = await reimbursement_settings.get_fixed_amount_cents(session)
         budget = await reimbursement_settings.get_monthly_budget_cents(session)
         remaining = await reimbursement_settings.get_monthly_remaining_cents(session)
         cd = await reimbursement_settings.get_default_cooldown_days(session)
@@ -66,14 +64,13 @@ async def on_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         elig_count = len(await eligibility_chat_repo.list_active(session))
 
     enabled_label = "✅ 已开启" if enabled else "⏸ 已关闭"
-    amount_s = reimbursement_settings.cents_to_yuan_display(amount)
     budget_s = reimbursement_settings.cents_to_yuan_display(budget)
     remaining_s = reimbursement_settings.cents_to_yuan_display(remaining)
     text = (
         "💰 报销管理\n"
         "─────────────────────────\n"
         f"总开关：{enabled_label}\n"
-        f"固定金额：{amount_s} 元\n"
+        f"金额档位：由各邀请人独立设定（100/150/200 元）\n"
         f"月预算：{budget_s} 元（剩余 {remaining_s}）\n"
         f"冷却天数：{cd} 天\n"
         f"重置日：每月 {reset_day} 日\n"
@@ -93,7 +90,6 @@ async def on_settings_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     async with session_scope(context) as session:
         enabled = await reimbursement_settings.is_enabled(session)
-        amount = await reimbursement_settings.get_fixed_amount_cents(session)
         budget = await reimbursement_settings.get_monthly_budget_cents(session)
         remaining = await reimbursement_settings.get_monthly_remaining_cents(session)
         cd = await reimbursement_settings.get_default_cooldown_days(session)
@@ -103,7 +99,8 @@ async def on_settings_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         "📋 报销系统配置\n"
         "─────────────────────────\n"
         f"总开关：{'✅ 已开启' if enabled else '⏸ 已关闭'}\n"
-        f"固定金额：{reimbursement_settings.cents_to_yuan_display(amount)} 元\n"
+        "金额档位：由各邀请人独立设定（100/150/200 元）\n"
+        "  → 进入「🎓 邀请人管理」修改各邀请人档位\n"
         f"月预算：{reimbursement_settings.cents_to_yuan_display(budget)} 元\n"
         f"当前剩余：{reimbursement_settings.cents_to_yuan_display(remaining)} 元\n"
         f"冷却天数：{cd} 天\n"
@@ -126,19 +123,6 @@ async def on_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         new_state = not enabled
     log.info("rei_enabled_toggled", new=new_state)
     await on_settings_panel(update, context)
-
-
-async def on_set_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await ack(update)
-    if not await require_super(update, context):
-        return
-    if update.effective_user is None:
-        return
-    set_awaiting(context, update.effective_user.id, AWAIT_REI_AMOUNT)
-    await edit_or_reply(
-        update,
-        "✏️ 请发送每次报销的【固定金额】（元，可带 1 位小数，如 50 / 50.5 / 50.00）。\n发送 /cancel 取消。",
-    )
 
 
 async def on_set_budget(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -378,7 +362,6 @@ async def consume_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bo
         return False
     kind = state.get("kind")
     if kind not in (
-        AWAIT_REI_AMOUNT,
         AWAIT_REI_BUDGET,
         AWAIT_REI_COOLDOWN,
         AWAIT_REI_RESET_DAY,
@@ -390,20 +373,6 @@ async def consume_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bo
     if text == "/cancel":
         clear_awaiting(context, update.effective_user.id)
         await update.message.reply_text("已取消。")
-        return True
-
-    if kind == AWAIT_REI_AMOUNT:
-        try:
-            cents = reimbursement_settings.yuan_text_to_cents(text)
-        except ValueError:
-            await update.message.reply_text("⚠️ 金额格式错误。")
-            return True
-        async with session_scope(context) as session:
-            await reimbursement_settings.set_fixed_amount_cents(session, cents)
-        await update.message.reply_text(
-            f"✅ 固定金额已设为 {reimbursement_settings.cents_to_yuan_display(cents)} 元。"
-        )
-        clear_awaiting(context, update.effective_user.id)
         return True
 
     if kind == AWAIT_REI_BUDGET:

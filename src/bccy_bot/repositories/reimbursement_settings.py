@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bccy_bot.db.models.enums import (
     SK_REI_BUDGET_RESET_DAY,
     SK_REI_DEFAULT_COOLDOWN_DAYS,
-    SK_REI_FIXED_AMOUNT_CENTS,
     SK_REI_GLOBAL_ENABLED,
     SK_REI_MONTHLY_BUDGET_CENTS,
     SK_REI_MONTHLY_REMAINING_CENTS,
@@ -27,15 +26,6 @@ async def is_enabled(session: AsyncSession) -> bool:
 
 async def set_enabled(session: AsyncSession, value: bool) -> None:
     await settings_repo.set_value(session, SK_REI_GLOBAL_ENABLED, "true" if value else "false")
-
-
-async def get_fixed_amount_cents(session: AsyncSession) -> int:
-    return await settings_repo.get_int(session, SK_REI_FIXED_AMOUNT_CENTS, 0)
-
-
-async def set_fixed_amount_cents(session: AsyncSession, cents: int) -> None:
-    cents = max(0, int(cents))
-    await settings_repo.set_value(session, SK_REI_FIXED_AMOUNT_CENTS, str(cents))
 
 
 async def get_monthly_budget_cents(session: AsyncSession) -> int:

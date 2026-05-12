@@ -57,12 +57,15 @@ from bccy_bot.keyboards.admin_callbacks import (
     ADM_INV_ADD_CANCEL,
     ADM_INV_ADD_CONFIRM,
     ADM_INV_ADD_PICK_GRP_PREFIX,
+    ADM_INV_ADD_PICK_TIER_PREFIX,
     ADM_INV_ADD_SET_MODE_PREFIX,
     ADM_INV_ADD_TOGGLE_MAT_PREFIX,
     ADM_INV_LIST,
     ADM_INV_LIST_PREFIX,
     ADM_INV_REMOVE_CONFIRM_PREFIX,
     ADM_INV_REMOVE_PREFIX,
+    ADM_INV_SET_TIER_OPEN_PREFIX,
+    ADM_INV_SET_TIER_VALUE_PREFIX,
     ADM_INV_TOGGLE_PREFIX,
     ADM_KEYS,
     ADM_LOG_CHANNEL,
@@ -90,7 +93,6 @@ from bccy_bot.keyboards.admin_callbacks import (
     ADM_REI_RESEND_AUDIT_PREFIX,
     ADM_REI_RESEND_PAYMENT_PREFIX,
     ADM_REI_RESET_REMAINING,
-    ADM_REI_SET_AMOUNT,
     ADM_REI_SET_BUDGET,
     ADM_REI_SET_COOLDOWN,
     ADM_REI_SET_RESET_DAY,
@@ -439,6 +441,11 @@ def build_application() -> Application:
         CallbackQueryHandler(adm_inviters.on_add_set_mode, pattern=f"^{ADM_INV_ADD_SET_MODE_PREFIX}.+$")
     )
     application.add_handler(
+        CallbackQueryHandler(
+            adm_inviters.on_add_pick_tier, pattern=f"^{ADM_INV_ADD_PICK_TIER_PREFIX}\\d+$"
+        )
+    )
+    application.add_handler(
         CallbackQueryHandler(adm_inviters.on_add_confirm, pattern=f"^{ADM_INV_ADD_CONFIRM}$")
     )
     application.add_handler(
@@ -453,6 +460,17 @@ def build_application() -> Application:
     application.add_handler(
         CallbackQueryHandler(
             adm_inviters.on_remove_confirm, pattern=f"^{ADM_INV_REMOVE_CONFIRM_PREFIX}\\d+$"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            adm_inviters.on_set_tier_open, pattern=f"^{ADM_INV_SET_TIER_OPEN_PREFIX}\\d+$"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            adm_inviters.on_set_tier_value,
+            pattern=f"^{ADM_INV_SET_TIER_VALUE_PREFIX}\\d+:\\d+$",
         )
     )
 
@@ -525,9 +543,6 @@ def build_application() -> Application:
         CallbackQueryHandler(adm_rei.on_settings_panel, pattern=f"^{ADM_REI_SETTINGS}$")
     )
     application.add_handler(CallbackQueryHandler(adm_rei.on_toggle, pattern=f"^{ADM_REI_TOGGLE}$"))
-    application.add_handler(
-        CallbackQueryHandler(adm_rei.on_set_amount, pattern=f"^{ADM_REI_SET_AMOUNT}$")
-    )
     application.add_handler(
         CallbackQueryHandler(adm_rei.on_set_budget, pattern=f"^{ADM_REI_SET_BUDGET}$")
     )
