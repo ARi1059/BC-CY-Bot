@@ -31,8 +31,7 @@ async def _seed_inviter(session, *, label: str, telegram_user_id: int) -> Invite
     inv = Inviter(
         telegram_user_id=telegram_user_id,
         display_name=label,
-        group_label=label,
-        target_group_id=grp.id,
+            target_group_id=grp.id,
         required_materials=[MAT_REPORT],
         review_mode=REVIEW_MODE_SELF,
         is_active=True,

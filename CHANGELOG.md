@@ -5,6 +5,46 @@
 
 ---
 
+## [1.0.0-beta.3] - 2026-05-13
+
+入群审核 / 报销系统重大解耦：报销不再依赖入群审核状态；新增独立的"报销老师"实体；
+回群密钥清理策略升级为永久封禁；资格校验失败现在能列出具体缺失项。
+
+### Added
+- 新表 `reimburse_teachers`（username 唯一 / display_name / group_label / 报销档位 / is_active）+ migration `b2c3d4e5f6a7`
+- `reimburse_teacher_repo` CRUD + `reimbursement_repo.set_teacher()`
+- 管理面板新增 `[👨‍🏫 报销老师管理]` 主入口（4 步添加 wizard / 删 / 调档位 / 改组别 / 启停）
+- 报销 wizard 新增 step 1：选老师；后续 3 项材料 step 2-4；选老师后才决定金额（按所选老师档位）
+- 资格校验失败时具体列出 `missing_chat_names`、`errored_chat_names`，方便用户主动补订阅
+
+### Changed
+- `precheck()` 移除 `no_approved_app` 与 `no_inviter_tier` 检查；现在用户**无需先通过入群审核**即可申请报销（只要通过资格校验）
+- `reimbursement_requests` 表：drop `application_id`、add `teacher_id` (FK ON DELETE SET NULL) + `teacher_username_snapshot`（老师 username 落库快照）
+- `inviters` 表：drop `group_label`、drop `reimbursement_tier_cents`；邀请人 wizard 从 7 步简化为 5 步
+- `account_cleanup_service`：正常账号在群内的清理动作 **kick → 永久封禁**；不再 `_unban`
+- 所有 inviter 渲染（`audit_service` / `log_channel_service` / `stats_service` / `recovery_key_service` / `inviter/panel.py` / `user/render.py`）移除 group_label 拼接，仅显示 `display_name`
+
+### Removed
+- `inviters.reimbursement_tier_cents` / `inviters.group_label` 列
+- `inviter_repo.update_tier()` 辅助函数
+- 邀请人添加 wizard 的步骤 3（组别名）与步骤 7（档位选择）
+- 邀请人管理列表的 `[💰 调档位]` 子键盘
+- `reimbursement_wizard_service` 的 `no_approved_app` / `no_inviter_tier` 预校验分支
+- `CLEANUP_KICK` 在 cleanup_service 中的代码路径（enum 值保留以兼容历史 audit 数据）
+
+### Upgrade
+```bash
+cd /opt/BC-CY-Bot
+sudo -u bccy git fetch --tags
+sudo -u bccy git checkout v1.0.0-beta.3
+sudo -u bccy .venv/bin/pip install --upgrade .
+sudo systemctl restart bccy-bot
+sudo journalctl -u bccy-bot -f          # 等 alembic upgrade head 到 b2c3d4e5f6a7
+```
+升级后请进 `/admin → [👨‍🏫 报销老师管理]` 录入老师；现有邀请人记录会自动 drop 掉档位/组别字段，但邀请人本身保留。
+
+---
+
 ## Unreleased
 
 ### Changed
@@ -123,5 +163,6 @@ docker compose logs -f bot   # 等待 super_admin_ensured + alembic upgrade head
 
 ---
 
+[1.0.0-beta.3]: https://github.com/ARi1059/BC-CY-Bot/releases/tag/v1.0.0-beta.3
 [1.0.0-beta.2]: https://github.com/ARi1059/BC-CY-Bot/releases/tag/v1.0.0-beta.2
 [1.0.0-beta.1]: https://github.com/ARi1059/BC-CY-Bot/releases/tag/v1.0.0-beta.1

@@ -55,8 +55,7 @@ async def test_inviter_create_and_toggle(session):
         session,
         telegram_user_id=111,
         display_name="张老师",
-        group_label="A组",
-        target_group_id=g.id,
+            target_group_id=g.id,
         required_materials=[MAT_BOOKING, MAT_GESTURE, MAT_REPORT],
         review_mode=REVIEW_MODE_SELF,
     )
@@ -74,8 +73,7 @@ async def test_inviter_delete(session):
         session,
         telegram_user_id=222,
         display_name="李老师",
-        group_label="B组",
-        target_group_id=g.id,
+            target_group_id=g.id,
         required_materials=[MAT_REPORT],
         review_mode=REVIEW_MODE_SELF,
     )

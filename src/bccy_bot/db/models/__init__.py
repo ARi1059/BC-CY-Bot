@@ -14,6 +14,7 @@ from bccy_bot.db.models.inviter import Inviter
 from bccy_bot.db.models.recovery_key import RecoveryKey
 from bccy_bot.db.models.recovery_key_attempt import RecoveryKeyAttempt
 from bccy_bot.db.models.recovery_reset_throttle import RecoveryResetThrottle
+from bccy_bot.db.models.reimburse_teacher import ReimburseTeacher
 from bccy_bot.db.models.reimbursement_audit_message import ReimbursementAuditMessage
 from bccy_bot.db.models.reimbursement_material import ReimbursementMaterial
 from bccy_bot.db.models.reimbursement_request import ReimbursementRequest
@@ -35,6 +36,7 @@ __all__ = [
     "RecoveryKey",
     "RecoveryKeyAttempt",
     "RecoveryResetThrottle",
+    "ReimburseTeacher",
     "ReimbursementAuditMessage",
     "ReimbursementMaterial",
     "ReimbursementRequest",

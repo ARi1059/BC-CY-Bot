@@ -80,7 +80,7 @@ async def panel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         stats = await stats_service.compute_inviter_stats(session, inv)
 
     text = (
-        f"🧑‍🏫 邀请人面板 · {inv.display_name}（{inv.group_label}）\n"
+        f"🧑‍🏫 邀请人面板 · {inv.display_name}\n"
         "─────────────────────────\n"
         f"📥 归属我的申请：{stats.total}\n"
         f"  待审核：{stats.pending}\n"
@@ -105,7 +105,7 @@ async def on_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
         stats = await stats_service.compute_inviter_stats(session, inv)
     text = (
-        f"🧑‍🏫 邀请人面板 · {inv.display_name}（{inv.group_label}）\n"
+        f"🧑‍🏫 邀请人面板 · {inv.display_name}\n"
         "─────────────────────────\n"
         f"📥 归属我的申请：{stats.total}\n"
         f"  待审核：{stats.pending}\n"

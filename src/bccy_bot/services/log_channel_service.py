@@ -56,7 +56,7 @@ def _applicant_label(application: Application) -> str:
 def _inviter_label(inviter: Inviter | None) -> str:
     if inviter is None:
         return "（未知）"
-    return f"{inviter.display_name}（{inviter.group_label}）"
+    return inviter.display_name
 
 
 def _mask_link(url: str) -> str:

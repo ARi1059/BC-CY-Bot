@@ -58,7 +58,7 @@ def inviter_list_keyboard(inviters: list[Inviter], page: int = 0) -> InlineKeybo
 
     rows: list[list[InlineKeyboardButton]] = []
     for inv in chunk:
-        label = f"👨‍🏫 {inv.display_name} · {inv.group_label}"
+        label = f"👨‍🏫 {inv.display_name}"
         rows.append([InlineKeyboardButton(label, callback_data=f"{USER_PICK_INVITER_PREFIX}{inv.id}")])
 
     # 翻页行

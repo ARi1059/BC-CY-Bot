@@ -139,8 +139,7 @@ async def _seed_full_pending(session, *, review_mode=REVIEW_MODE_SELF, inviter_t
     inv = Inviter(
         telegram_user_id=inviter_tg_id,
         display_name="张老师",
-        group_label="A组",
-        target_group_id=grp.id,
+            target_group_id=grp.id,
         required_materials=[MAT_BOOKING, MAT_GESTURE, MAT_REPORT],
         review_mode=review_mode,
         is_active=True,
@@ -167,7 +166,7 @@ async def _seed_full_pending(session, *, review_mode=REVIEW_MODE_SELF, inviter_t
     ]):
         m = ApplicationMaterial(
             application_id=app.id,
-            material_type=mt,
+        material_type=mt,
             content_type=ct,
             telegram_file_id=tag if ct == CT_PHOTO else None,
             text_content=tag if ct == CT_TEXT else None,
@@ -226,7 +225,6 @@ async def test_notify_long_report_downgrades_to_three_messages(session, bot):
     report_mat = (
         await session.execute(
             select(ApplicationMaterial).where(
-                ApplicationMaterial.application_id == app.id,
                 ApplicationMaterial.material_type == MAT_REPORT,
             )
         )

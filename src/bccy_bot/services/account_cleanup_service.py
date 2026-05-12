@@ -1,17 +1,17 @@
 """
-密钥使用后的原账号清理（[REQ §3.8.5]）。
+密钥使用后的原账号清理（[REQ §3.8.5]，[v1.0.0-beta.3] 策略升级）。
 
-决策表：
-| 原账号状态     | 在群内 | 动作                                           |
-|---------------|:----:|----------------------------------------------|
-| 正常账号       | ✅   | 踢出（banChatMember + 立即 unbanChatMember）    |
-| 正常账号       | ❌   | 无动作                                         |
-| 已注销账号     | 任意 | 永久封禁（banChatMember 不解封）+ 写入本地黑名单 |
+决策表（v1.0.0-beta.3 起）：
+| 原账号状态     | 在群内 | 动作                                                |
+|---------------|:----:|----------------------------------------------------|
+| 正常账号       | ✅   | 永久封禁（banChatMember 不解封）                     |
+| 正常账号       | ❌   | 无动作（不在群里，无可封）                            |
+| 已注销账号     | 任意 | 永久封禁（banChatMember 不解封）+ 写入本地黑名单      |
 
 例外：
 - 原账号是该群管理员/群主 → 不踢/不封，仅告警
 - Bot 缺权限 → cleanup_action='failed_no_permission'，不阻塞主流程
-- 状态判定不确定 → 按 normal 兜底（不做封禁）
+- 状态判定不确定 → 按 normal 兜底（仍永封）
 """
 
 from dataclasses import dataclass
@@ -25,12 +25,9 @@ from bccy_bot.db.models.blacklist import Blacklist
 from bccy_bot.db.models.enums import (
     CLEANUP_BAN,
     CLEANUP_FAILED_NO_PERMISSION,
-    CLEANUP_KICK,
     CLEANUP_SKIP_ADMIN,
     CLEANUP_SKIP_NOT_IN_GROUP,
     CLEANUP_STATUS_DEACTIVATED,
-    CLEANUP_STATUS_NORMAL,
-    CLEANUP_STATUS_UNKNOWN,
 )
 from bccy_bot.repositories import blacklist_repo
 from bccy_bot.utils.retry import telegram_retry
@@ -129,13 +126,12 @@ async def cleanup_old_account(
             summary="➖ 无需清理（原账号未在群内）",
         )
 
-    # 正常账号 + 在群内：踢出（ban → 立即 unban）
+    # 正常账号 + 在群内：永久封禁（v1.0.0-beta.3 起，密钥被他人使用即视为出借/失控，永封）
     try:
         await _ban(bot, target_chat_telegram_id, old_owner_telegram_id)
-        await _unban(bot, target_chat_telegram_id, old_owner_telegram_id)
     except (BadRequest, Forbidden) as e:
         log.error(
-            "cleanup_kick_failed_no_permission",
+            "cleanup_ban_failed_no_permission",
             chat_id=target_chat_telegram_id,
             user_id=old_owner_telegram_id,
             err=str(e),
@@ -147,12 +143,12 @@ async def cleanup_old_account(
         )
 
     log.info(
-        "cleanup_kicked_normal",
+        "cleanup_banned_normal",
         chat_id=target_chat_telegram_id,
         user_id=old_owner_telegram_id,
     )
     return CleanupResult(
-        action=CLEANUP_KICK,
+        action=CLEANUP_BAN,
         old_account_status=account_status,
-        summary="✅ 已踢出原账号（账号正常，曾在群内）",
+        summary="✅ 已永久封禁原账号（密钥已被他人使用）",
     )

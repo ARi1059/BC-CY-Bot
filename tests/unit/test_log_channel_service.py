@@ -33,8 +33,7 @@ async def _seed_pending(session) -> tuple[Application, Inviter]:
     inv = Inviter(
         telegram_user_id=111,
         display_name="张老师",
-        group_label="A组",
-        target_group_id=grp.id,
+            target_group_id=grp.id,
         required_materials=[MAT_REPORT],
         review_mode=REVIEW_MODE_SELF,
         is_active=True,

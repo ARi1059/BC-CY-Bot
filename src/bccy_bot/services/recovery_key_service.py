@@ -360,7 +360,7 @@ async def verify_and_consume(
         invite_link_url=db_link.invite_link,
         new_key_plaintext=new_plaintext,
         application_id=application.id,
-        inviter_display=f"{inviter.display_name}（{inviter.group_label}）",
+        inviter_display=inviter.display_name,
         cleanup_summary=cleanup_summary,
         matched_key_id=matched.id,
     )

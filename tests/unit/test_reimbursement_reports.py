@@ -36,8 +36,7 @@ async def _seed_inviter_app(session) -> Application:
     inv = Inviter(
         telegram_user_id=200,
         display_name="x",
-        group_label="A",
-        target_group_id=g.id,
+            target_group_id=g.id,
         required_materials=[MAT_REPORT],
         review_mode=REVIEW_MODE_SELF,
         is_active=True,
@@ -71,8 +70,7 @@ async def _add_rei(
     r = ReimbursementRequest(
         applicant_telegram_id=applicant_id,
         applicant_username=username,
-        application_id=app.id,
-        status=status,
+            status=status,
         wizard_step=0,
         amount_cents=amount_cents,
         submitted_at=submitted_at,

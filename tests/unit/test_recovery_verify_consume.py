@@ -9,7 +9,7 @@ from bccy_bot.db.models.application import Application
 from bccy_bot.db.models.blacklist import Blacklist
 from bccy_bot.db.models.enums import (
     APP_STATUS_APPROVED,
-    CLEANUP_KICK,
+    CLEANUP_BAN,
     CLEANUP_SKIP_NOT_IN_GROUP,
     MAT_REPORT,
     REVIEW_MODE_SELF,
@@ -92,8 +92,7 @@ async def _seed(session, *, applicant_id: int = 100, original_owner: int | None 
     inv = Inviter(
         telegram_user_id=200,
         display_name="张老师",
-        group_label="A组",
-        target_group_id=grp.id,
+            target_group_id=grp.id,
         required_materials=[MAT_REPORT],
         review_mode=REVIEW_MODE_SELF,
         is_active=True,
@@ -118,7 +117,7 @@ async def _issue_key(session, app: Application, owner_id: int | None = None):
         owner_id = app.applicant_telegram_id
     plaintext = recovery_key_service.generate_key_plaintext()
     record = RecoveryKey(
-        application_id=app.id,
+            application_id=app.id,
         owner_telegram_id=owner_id,
         original_owner_telegram_id=app.applicant_telegram_id,
         key_hash=recovery_key_service.hash_key(plaintext),
@@ -300,7 +299,7 @@ async def test_full_success_flow_consumes_key_and_issues_new(session):
     # 新密钥已落库（owner = 新 ID，链式 previous_key_id）
     new_keys = (
         await session.execute(
-            select(RecoveryKey).where(RecoveryKey.application_id == app.id, RecoveryKey.status == RK_ACTIVE)
+            select(RecoveryKey).where(RecoveryKey.status == RK_ACTIVE)
         )
     ).scalars().all()
     assert len(new_keys) == 1
@@ -317,12 +316,12 @@ async def test_full_success_flow_consumes_key_and_issues_new(session):
 
 
 @pytest.mark.asyncio
-async def test_success_flow_kicks_old_account_when_in_group(session):
+async def test_success_flow_bans_normal_old_account_in_group(session):
+    """v1.0.0-beta.3：正常账号 + 在群内的清理策略改为永久封禁（不再 unban）。"""
     grp, _, app = await _seed(session)
     _, plaintext = await _issue_key(session, app)
 
     bot = FakeBot()
-    # 模拟原账号仍在群中
     bot.member_lookup[(grp.telegram_chat_id, app.applicant_telegram_id)] = _MemberStub(
         status="member",
         user=type("U", (), {"first_name": "Alice", "last_name": None, "username": "alice"}),
@@ -333,7 +332,8 @@ async def test_success_flow_kicks_old_account_when_in_group(session):
     )
     assert r.success is True
     assert bot.banned_users == [(grp.telegram_chat_id, app.applicant_telegram_id)]
-    assert bot.unbanned_users == [(grp.telegram_chat_id, app.applicant_telegram_id)]  # 踢出 = ban+unban
+    # 不再 unban —— 永久封禁
+    assert bot.unbanned_users == []
 
 
 @pytest.mark.asyncio

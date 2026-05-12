@@ -38,8 +38,7 @@ async def _seed_approved_application(session, applicant_id: int = 100):
     inv = Inviter(
         telegram_user_id=200,
         display_name="x",
-        group_label="A",
-        target_group_id=g.id,
+            target_group_id=g.id,
         required_materials=[MAT_REPORT],
         review_mode=REVIEW_MODE_SELF,
         is_active=True,
@@ -116,67 +115,67 @@ def test_cents_to_yuan_display():
     assert reimbursement_settings.cents_to_yuan_display(123) == "1.23"
 
 
-# ---------- inviter tier 档位 ----------
+# ---------- reimburse_teacher_repo ----------
 
 
 @pytest.mark.asyncio
-async def test_inviter_tier_defaults_to_100_yuan(session):
-    """新建 inviter 时未指定档位 → 默认 100 元（10000 分）。"""
-    from bccy_bot.db.models.group import Group
-    from bccy_bot.repositories import group_repo, inviter_repo
+async def test_teacher_create_defaults_and_update_tier(session):
+    """新建老师默认档位 100 元；可改三档；非法值抛 ValueError。"""
+    from bccy_bot.repositories import reimburse_teacher_repo
 
-    g = Group(telegram_chat_id=-100999, name="t")
-    session.add(g)
-    await session.flush()
-    inv = await inviter_repo.create(
+    t = await reimburse_teacher_repo.create(
         session,
-        telegram_user_id=None,
-        display_name="t1",
-        group_label="T",
-        target_group_id=g.id,
-        required_materials=[MAT_REPORT],
-        review_mode=REVIEW_MODE_SELF,
+        telegram_username="alice",
+        display_name="Alice",
+        group_label="A组",
     )
-    assert inv.reimbursement_tier_cents == 10000
+    assert t.reimbursement_tier_cents == 10000
+    assert t.is_active is True
 
-
-@pytest.mark.asyncio
-async def test_inviter_tier_create_with_value_and_update_tier(session):
-    """显式传 150 元 → 然后调整到 200 元；非法值会被拒绝。"""
-    from bccy_bot.db.models.group import Group
-    from bccy_bot.repositories import inviter_repo
-
-    g = Group(telegram_chat_id=-100998, name="t")
-    session.add(g)
-    await session.flush()
-    inv = await inviter_repo.create(
-        session,
-        telegram_user_id=None,
-        display_name="t2",
-        group_label="T",
-        target_group_id=g.id,
-        required_materials=[MAT_REPORT],
-        review_mode=REVIEW_MODE_SELF,
-        reimbursement_tier_cents=15000,
-    )
-    assert inv.reimbursement_tier_cents == 15000
-
-    await inviter_repo.update_tier(session, inv, 20000)
-    assert inv.reimbursement_tier_cents == 20000
+    await reimburse_teacher_repo.update_tier(session, t, 20000)
+    assert t.reimbursement_tier_cents == 20000
 
     with pytest.raises(ValueError):
-        await inviter_repo.update_tier(session, inv, 12345)
+        await reimburse_teacher_repo.update_tier(session, t, 12345)
     with pytest.raises(ValueError):
-        await inviter_repo.create(
+        await reimburse_teacher_repo.create(
             session,
-            telegram_user_id=None,
-            display_name="bad",
-            group_label="T",
-            target_group_id=g.id,
-            required_materials=[MAT_REPORT],
-            review_mode=REVIEW_MODE_SELF,
+            telegram_username="bob",
+            display_name="Bob",
+            group_label="B组",
             reimbursement_tier_cents=99999,
         )
+
+
+@pytest.mark.asyncio
+async def test_teacher_username_unique(session):
+    """telegram_username 唯一约束。"""
+    from sqlalchemy.exc import IntegrityError
+
+    from bccy_bot.repositories import reimburse_teacher_repo
+
+    await reimburse_teacher_repo.create(
+        session, telegram_username="dup", display_name="A", group_label="X"
+    )
+    with pytest.raises(IntegrityError):
+        await reimburse_teacher_repo.create(
+            session, telegram_username="dup", display_name="B", group_label="X"
+        )
+
+
+@pytest.mark.asyncio
+async def test_teacher_toggle_and_update_group(session):
+    from bccy_bot.repositories import reimburse_teacher_repo
+
+    t = await reimburse_teacher_repo.create(
+        session, telegram_username="carol", display_name="C", group_label="老A"
+    )
+    assert t.is_active is True
+    await reimburse_teacher_repo.toggle_active(session, t)
+    assert t.is_active is False
+
+    await reimburse_teacher_repo.update_group_label(session, t, "新B")
+    assert t.group_label == "新B"
 
 
 # ---------- eligibility_chat_repo ----------
@@ -255,8 +254,7 @@ async def test_create_wizard_request_baseline(session):
         applicant_telegram_id=app.applicant_telegram_id,
         applicant_username="u",
         applicant_display_name="U",
-        application_id=app.id,
-        amount_cents=5000,
+            amount_cents=5000,
     )
     assert r.status == REI_STATUS_WIZARD
     assert r.wizard_step == 1
@@ -274,8 +272,7 @@ async def test_submit_and_cancel_state_transitions(session):
         applicant_telegram_id=app.applicant_telegram_id,
         applicant_username=None,
         applicant_display_name=None,
-        application_id=app.id,
-        amount_cents=5000,
+            amount_cents=5000,
     )
     await reimbursement_repo.submit(session, r)
     assert r.status == REI_STATUS_PENDING
@@ -294,8 +291,7 @@ async def test_materials_add_and_clear(session):
         applicant_telegram_id=app.applicant_telegram_id,
         applicant_username=None,
         applicant_display_name=None,
-        application_id=app.id,
-        amount_cents=5000,
+            amount_cents=5000,
     )
     await reimbursement_repo.add_material(
         session,
@@ -333,16 +329,14 @@ async def test_list_pending_and_approved_unpaid(session):
         applicant_telegram_id=100,
         applicant_username=None,
         applicant_display_name=None,
-        application_id=app1.id,
-        amount_cents=5000,
+            amount_cents=5000,
     )
     r2 = await reimbursement_repo.create_wizard(
         session,
         applicant_telegram_id=200,
         applicant_username=None,
         applicant_display_name=None,
-        application_id=app2.id,
-        amount_cents=5000,
+            amount_cents=5000,
     )
     await reimbursement_repo.submit(session, r1)
     await reimbursement_repo.submit(session, r2)
@@ -369,7 +363,6 @@ async def test_count_in_range_for_user(session):
             applicant_telegram_id=300,
             applicant_username=None,
             applicant_display_name=None,
-            application_id=app.id,
             amount_cents=5000,
         )
         r.status = REI_STATUS_PAID

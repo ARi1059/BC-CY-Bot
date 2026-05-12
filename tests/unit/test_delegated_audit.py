@@ -36,8 +36,7 @@ async def _seed_delegated(session, admin_ids=(100, 200, 300)):
     inv = Inviter(
         telegram_user_id=None,  # 代审型 inviter 可无 telegram_user_id
         display_name="王老师",
-        group_label="B组",
-        target_group_id=grp.id,
+            target_group_id=grp.id,
         required_materials=[MAT_BOOKING, MAT_GESTURE, MAT_REPORT],
         review_mode=REVIEW_MODE_DELEGATED,
         is_active=True,
@@ -75,8 +74,8 @@ async def _seed_delegated(session, admin_ids=(100, 200, 300)):
     ]):
         session.add(
             ApplicationMaterial(
-                application_id=app.id,
-                material_type=mt,
+            application_id=app.id,
+        material_type=mt,
                 content_type=ct,
                 telegram_file_id=tag if ct == CT_PHOTO else None,
                 text_content=tag if ct == CT_TEXT else None,
@@ -303,8 +302,7 @@ async def test_authorize_self_review_unchanged(session):
     inv = Inviter(
         telegram_user_id=777,
         display_name="X",
-        group_label="A",
-        target_group_id=grp.id,
+            target_group_id=grp.id,
         required_materials=[MAT_REPORT],
         review_mode=REVIEW_MODE_SELF,
         is_active=True,

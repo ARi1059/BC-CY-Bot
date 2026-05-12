@@ -44,8 +44,7 @@ async def _seed_application(session, *, with_report: bool = True) -> Application
     inv = Inviter(
         telegram_user_id=111,
         display_name="张老师",
-        group_label="A组",
-        target_group_id=grp.id,
+            target_group_id=grp.id,
         required_materials=[MAT_BOOKING, MAT_GESTURE, MAT_REPORT] if with_report else [MAT_BOOKING],
         review_mode=REVIEW_MODE_SELF,
         is_active=True,
@@ -65,7 +64,7 @@ async def _seed_application(session, *, with_report: bool = True) -> Application
     session.add(
         ApplicationMaterial(
             application_id=app.id,
-            material_type=MAT_BOOKING,
+        material_type=MAT_BOOKING,
             content_type=CT_PHOTO,
             telegram_file_id="booking-fid",
             text_content=None,
@@ -75,8 +74,8 @@ async def _seed_application(session, *, with_report: bool = True) -> Application
     if with_report:
         session.add(
             ApplicationMaterial(
-                application_id=app.id,
-                material_type=MAT_REPORT,
+            application_id=app.id,
+        material_type=MAT_REPORT,
                 content_type=CT_TEXT,
                 telegram_file_id=None,
                 text_content="今天出击 5 次成功",

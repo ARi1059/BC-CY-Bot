@@ -7,6 +7,7 @@ from bccy_bot.db.models.blacklist import Blacklist
 from bccy_bot.db.models.enums import REI_TIER_LABELS, REI_TIER_VALUES_CENTS
 from bccy_bot.db.models.group import Group
 from bccy_bot.db.models.inviter import Inviter
+from bccy_bot.db.models.reimburse_teacher import ReimburseTeacher
 from bccy_bot.keyboards.admin_callbacks import (
     ADM_BACK,
     ADM_BL_ADD,
@@ -46,16 +47,25 @@ from bccy_bot.keyboards.admin_callbacks import (
     ADM_INV_ADD_CANCEL,
     ADM_INV_ADD_CONFIRM,
     ADM_INV_ADD_PICK_GRP_PREFIX,
-    ADM_INV_ADD_PICK_TIER_PREFIX,
     ADM_INV_ADD_SET_MODE_PREFIX,
     ADM_INV_ADD_TOGGLE_MAT_PREFIX,
     ADM_INV_LIST,
     ADM_INV_LIST_PREFIX,
     ADM_INV_REMOVE_CONFIRM_PREFIX,
     ADM_INV_REMOVE_PREFIX,
-    ADM_INV_SET_TIER_OPEN_PREFIX,
-    ADM_INV_SET_TIER_VALUE_PREFIX,
     ADM_INV_TOGGLE_PREFIX,
+    ADM_TEA_ADD,
+    ADM_TEA_ADD_CANCEL,
+    ADM_TEA_ADD_CONFIRM,
+    ADM_TEA_ADD_PICK_TIER_PREFIX,
+    ADM_TEA_LIST,
+    ADM_TEA_LIST_PREFIX,
+    ADM_TEA_REMOVE_CONFIRM_PREFIX,
+    ADM_TEA_REMOVE_PREFIX,
+    ADM_TEA_SET_GROUP_OPEN_PREFIX,
+    ADM_TEA_SET_TIER_OPEN_PREFIX,
+    ADM_TEA_SET_TIER_VALUE_PREFIX,
+    ADM_TEA_TOGGLE_PREFIX,
     ADM_KEYS,
     ADM_LOG_CHANNEL,
     ADM_LOG_CHANNEL_BIND,
@@ -116,6 +126,7 @@ def main_panel_keyboard(is_super: bool) -> InlineKeyboardMarkup:
             InlineKeyboardButton("🔑 回群密钥", callback_data=ADM_KEYS),
             InlineKeyboardButton("💰 报销管理", callback_data=ADM_REI),
         ],
+        [InlineKeyboardButton("👨‍🏫 报销老师管理", callback_data=ADM_TEA_LIST)],
     ]
     if is_super:
         rows.append([InlineKeyboardButton("⚙️ 系统配置", callback_data=ADM_CONFIG)])
@@ -162,8 +173,7 @@ def inviter_list_keyboard(inviters: list[Inviter], page: int = 0) -> InlineKeybo
     rows: list[list[InlineKeyboardButton]] = []
     for inv in chunk:
         status_icon = "✅" if inv.is_active else "⏸"
-        tier_label = REI_TIER_LABELS.get(inv.reimbursement_tier_cents, f"{inv.reimbursement_tier_cents/100:.0f}元")
-        label = f"{status_icon} {inv.display_name} · {inv.group_label} · 💰{tier_label}"
+        label = f"{status_icon} {inv.display_name}"
         rows.append(
             [
                 InlineKeyboardButton(label, callback_data=ADM_INV_LIST),
@@ -174,35 +184,11 @@ def inviter_list_keyboard(inviters: list[Inviter], page: int = 0) -> InlineKeybo
                 InlineKeyboardButton("🗑", callback_data=f"{ADM_INV_REMOVE_PREFIX}{inv.id}"),
             ]
         )
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    f"💰 调档位（当前 {tier_label}）",
-                    callback_data=f"{ADM_INV_SET_TIER_OPEN_PREFIX}{inv.id}",
-                ),
-            ]
-        )
     pager = _pager(ADM_INV_LIST_PREFIX, page, len(inviters))
     if pager:
         rows.append(pager)
     rows.append([InlineKeyboardButton("➕ 添加邀请人", callback_data=ADM_INV_ADD)])
     rows.append(_back_row())
-    return InlineKeyboardMarkup(rows)
-
-
-def inviter_tier_picker_keyboard(inviter_id: int) -> InlineKeyboardMarkup:
-    """编辑某邀请人档位的子键盘：三档 + 返回。"""
-    rows: list[list[InlineKeyboardButton]] = []
-    for cents in REI_TIER_VALUES_CENTS:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    f"💰 {REI_TIER_LABELS[cents]}",
-                    callback_data=f"{ADM_INV_SET_TIER_VALUE_PREFIX}{inviter_id}:{cents}",
-                )
-            ]
-        )
-    rows.append([InlineKeyboardButton("« 返回邀请人列表", callback_data=ADM_INV_LIST)])
     return InlineKeyboardMarkup(rows)
 
 
@@ -261,29 +247,110 @@ def inviter_add_step5_pick_mode_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def inviter_add_step6_pick_tier_keyboard() -> InlineKeyboardMarkup:
-    """添加 wizard 步骤 7/7：选择该邀请人的报销档位。"""
-    rows: list[list[InlineKeyboardButton]] = []
-    for cents in REI_TIER_VALUES_CENTS:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    f"💰 {REI_TIER_LABELS[cents]}",
-                    callback_data=f"{ADM_INV_ADD_PICK_TIER_PREFIX}{cents}",
-                )
-            ]
-        )
-    rows.append([InlineKeyboardButton("« 取消", callback_data=ADM_INV_ADD_CANCEL)])
-    return InlineKeyboardMarkup(rows)
-
-
-def inviter_add_step7_confirm_keyboard() -> InlineKeyboardMarkup:
+def inviter_add_confirm_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("✅ 确认创建", callback_data=ADM_INV_ADD_CONFIRM)],
             [InlineKeyboardButton("« 取消", callback_data=ADM_INV_ADD_CANCEL)],
         ]
     )
+
+
+# === Reimburse Teachers ===
+
+
+def teacher_list_keyboard(teachers: list[ReimburseTeacher], page: int = 0) -> InlineKeyboardMarkup:
+    start = page * ITEMS_PER_PAGE
+    chunk = teachers[start : start + ITEMS_PER_PAGE]
+    rows: list[list[InlineKeyboardButton]] = []
+    for t in chunk:
+        status_icon = "✅" if t.is_active else "⏸"
+        tier_label = REI_TIER_LABELS.get(
+            t.reimbursement_tier_cents, f"{t.reimbursement_tier_cents/100:.0f}元"
+        )
+        label = f"{status_icon} {t.display_name} · {t.group_label} · 💰{tier_label}"
+        rows.append(
+            [
+                InlineKeyboardButton(label, callback_data=ADM_TEA_LIST),
+                InlineKeyboardButton(
+                    "⏸停用" if t.is_active else "▶️启用",
+                    callback_data=f"{ADM_TEA_TOGGLE_PREFIX}{t.id}",
+                ),
+                InlineKeyboardButton("🗑", callback_data=f"{ADM_TEA_REMOVE_PREFIX}{t.id}"),
+            ]
+        )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"💰 调档位（{tier_label}）",
+                    callback_data=f"{ADM_TEA_SET_TIER_OPEN_PREFIX}{t.id}",
+                ),
+                InlineKeyboardButton(
+                    f"🏷 改组别（{t.group_label}）",
+                    callback_data=f"{ADM_TEA_SET_GROUP_OPEN_PREFIX}{t.id}",
+                ),
+            ]
+        )
+    pager = _pager(ADM_TEA_LIST_PREFIX, page, len(teachers))
+    if pager:
+        rows.append(pager)
+    rows.append([InlineKeyboardButton("➕ 添加报销老师", callback_data=ADM_TEA_ADD)])
+    rows.append(_back_row())
+    return InlineKeyboardMarkup(rows)
+
+
+def teacher_remove_confirm_keyboard(teacher_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "✅ 确认删除", callback_data=f"{ADM_TEA_REMOVE_CONFIRM_PREFIX}{teacher_id}"
+                )
+            ],
+            [InlineKeyboardButton("« 不删除，返回", callback_data=ADM_TEA_LIST)],
+        ]
+    )
+
+
+def teacher_add_pick_tier_keyboard() -> InlineKeyboardMarkup:
+    """添加老师 wizard 第 4 步：选档位。"""
+    rows: list[list[InlineKeyboardButton]] = []
+    for cents in REI_TIER_VALUES_CENTS:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"💰 {REI_TIER_LABELS[cents]}",
+                    callback_data=f"{ADM_TEA_ADD_PICK_TIER_PREFIX}{cents}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton("« 取消", callback_data=ADM_TEA_ADD_CANCEL)])
+    return InlineKeyboardMarkup(rows)
+
+
+def teacher_add_confirm_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("✅ 确认创建", callback_data=ADM_TEA_ADD_CONFIRM)],
+            [InlineKeyboardButton("« 取消", callback_data=ADM_TEA_ADD_CANCEL)],
+        ]
+    )
+
+
+def teacher_tier_picker_keyboard(teacher_id: int) -> InlineKeyboardMarkup:
+    """编辑某老师档位的子键盘。"""
+    rows: list[list[InlineKeyboardButton]] = []
+    for cents in REI_TIER_VALUES_CENTS:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"💰 {REI_TIER_LABELS[cents]}",
+                    callback_data=f"{ADM_TEA_SET_TIER_VALUE_PREFIX}{teacher_id}:{cents}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton("« 返回老师列表", callback_data=ADM_TEA_LIST)])
+    return InlineKeyboardMarkup(rows)
 
 
 # === Blacklist ===

@@ -70,9 +70,7 @@ class _AuditPayload:
 
 
 def _build_summary_text(application: Application, inviter: Inviter | None) -> str:
-    inviter_label = (
-        f"{inviter.display_name}（{inviter.group_label}）" if inviter else "（未知）"
-    )
+    inviter_label = inviter.display_name if inviter else "（未知）"
     submitted_at = (
         application.submitted_at.strftime("%Y-%m-%d %H:%M")
         if application.submitted_at

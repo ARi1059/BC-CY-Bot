@@ -24,6 +24,7 @@ from bccy_bot.handlers.admin import (
     settings_ui as adm_settings,
     stats as adm_stats,
     stubs as adm_stubs,
+    teachers as adm_teachers,
 )
 from bccy_bot.handlers.common import chat_member as chat_member_handler
 from bccy_bot.handlers.inviter import audit as inviter_audit
@@ -57,16 +58,25 @@ from bccy_bot.keyboards.admin_callbacks import (
     ADM_INV_ADD_CANCEL,
     ADM_INV_ADD_CONFIRM,
     ADM_INV_ADD_PICK_GRP_PREFIX,
-    ADM_INV_ADD_PICK_TIER_PREFIX,
     ADM_INV_ADD_SET_MODE_PREFIX,
     ADM_INV_ADD_TOGGLE_MAT_PREFIX,
     ADM_INV_LIST,
     ADM_INV_LIST_PREFIX,
     ADM_INV_REMOVE_CONFIRM_PREFIX,
     ADM_INV_REMOVE_PREFIX,
-    ADM_INV_SET_TIER_OPEN_PREFIX,
-    ADM_INV_SET_TIER_VALUE_PREFIX,
     ADM_INV_TOGGLE_PREFIX,
+    ADM_TEA_ADD,
+    ADM_TEA_ADD_CANCEL,
+    ADM_TEA_ADD_CONFIRM,
+    ADM_TEA_ADD_PICK_TIER_PREFIX,
+    ADM_TEA_LIST,
+    ADM_TEA_LIST_PREFIX,
+    ADM_TEA_REMOVE_CONFIRM_PREFIX,
+    ADM_TEA_REMOVE_PREFIX,
+    ADM_TEA_SET_GROUP_OPEN_PREFIX,
+    ADM_TEA_SET_TIER_OPEN_PREFIX,
+    ADM_TEA_SET_TIER_VALUE_PREFIX,
+    ADM_TEA_TOGGLE_PREFIX,
     ADM_KEYS,
     ADM_LOG_CHANNEL,
     ADM_LOG_CHANNEL_BIND,
@@ -129,6 +139,8 @@ from bccy_bot.keyboards.reimburse_callbacks import (
     REI_USER_CANCEL,
     REI_USER_CONFIRM_CANCEL,
     REI_USER_DISMISS,
+    REI_USER_PICK_TEACHER_PAGE_PREFIX,
+    REI_USER_PICK_TEACHER_PREFIX,
     REI_USER_PREVIEW_CONFIRM,
     REI_USER_PREVIEW_REDO,
 )
@@ -337,6 +349,17 @@ def build_application() -> Application:
     application.add_handler(
         CallbackQueryHandler(user_reimburse.on_preview_redo, pattern=f"^{REI_USER_PREVIEW_REDO}$")
     )
+    # v1.0.0-beta.3 选老师
+    application.add_handler(
+        CallbackQueryHandler(
+            user_reimburse.on_pick_teacher, pattern=f"^{REI_USER_PICK_TEACHER_PREFIX}\\d+$"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            user_reimburse.on_pick_teacher_page, pattern=f"^{REI_USER_PICK_TEACHER_PAGE_PREFIX}\\d+$"
+        )
+    )
 
     # === Reimbursement admin review callbacks ===
     application.add_handler(
@@ -441,11 +464,6 @@ def build_application() -> Application:
         CallbackQueryHandler(adm_inviters.on_add_set_mode, pattern=f"^{ADM_INV_ADD_SET_MODE_PREFIX}.+$")
     )
     application.add_handler(
-        CallbackQueryHandler(
-            adm_inviters.on_add_pick_tier, pattern=f"^{ADM_INV_ADD_PICK_TIER_PREFIX}\\d+$"
-        )
-    )
-    application.add_handler(
         CallbackQueryHandler(adm_inviters.on_add_confirm, pattern=f"^{ADM_INV_ADD_CONFIRM}$")
     )
     application.add_handler(
@@ -462,15 +480,50 @@ def build_application() -> Application:
             adm_inviters.on_remove_confirm, pattern=f"^{ADM_INV_REMOVE_CONFIRM_PREFIX}\\d+$"
         )
     )
+
+    # === Admin: reimburse teachers (v1.0.0-beta.3) ===
     application.add_handler(
         CallbackQueryHandler(
-            adm_inviters.on_set_tier_open, pattern=f"^{ADM_INV_SET_TIER_OPEN_PREFIX}\\d+$"
+            adm_teachers.on_list, pattern=f"^({ADM_TEA_LIST}|{ADM_TEA_LIST_PREFIX}\\d+)$"
+        )
+    )
+    application.add_handler(CallbackQueryHandler(adm_teachers.on_add, pattern=f"^{ADM_TEA_ADD}$"))
+    application.add_handler(
+        CallbackQueryHandler(
+            adm_teachers.on_add_pick_tier, pattern=f"^{ADM_TEA_ADD_PICK_TIER_PREFIX}\\d+$"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_teachers.on_add_confirm, pattern=f"^{ADM_TEA_ADD_CONFIRM}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_teachers.on_add_cancel, pattern=f"^{ADM_TEA_ADD_CANCEL}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_teachers.on_toggle, pattern=f"^{ADM_TEA_TOGGLE_PREFIX}\\d+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_teachers.on_remove, pattern=f"^{ADM_TEA_REMOVE_PREFIX}\\d+$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            adm_teachers.on_remove_confirm, pattern=f"^{ADM_TEA_REMOVE_CONFIRM_PREFIX}\\d+$"
         )
     )
     application.add_handler(
         CallbackQueryHandler(
-            adm_inviters.on_set_tier_value,
-            pattern=f"^{ADM_INV_SET_TIER_VALUE_PREFIX}\\d+:\\d+$",
+            adm_teachers.on_set_tier_open, pattern=f"^{ADM_TEA_SET_TIER_OPEN_PREFIX}\\d+$"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            adm_teachers.on_set_tier_value,
+            pattern=f"^{ADM_TEA_SET_TIER_VALUE_PREFIX}\\d+:\\d+$",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            adm_teachers.on_set_group_open, pattern=f"^{ADM_TEA_SET_GROUP_OPEN_PREFIX}\\d+$"
         )
     )
 

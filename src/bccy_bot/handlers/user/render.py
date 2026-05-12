@@ -62,7 +62,7 @@ def render_preview(info: CurrentStepInfo, materials: list[ApplicationMaterial]) 
     inviter = info.inviter
     lines = ["📝 第 3 步：预览与提交", "─────────────────────────"]
     if inviter is not None:
-        lines.append(f"邀请人：{inviter.display_name} · {inviter.group_label}")
+        lines.append(f"邀请人：{inviter.display_name}")
     lines.append("")
     lines.append("已提交材料：")
     for m in materials:

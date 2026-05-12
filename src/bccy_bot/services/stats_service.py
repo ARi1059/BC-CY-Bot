@@ -98,7 +98,7 @@ async def compute_inviter_stats(session: AsyncSession, inviter: Inviter) -> Invi
 
     return InviterStats(
         inviter_id=inviter.id,
-        inviter_display=f"{inviter.display_name} · {inviter.group_label}",
+        inviter_display=inviter.display_name,
         pending=pending,
         approved=approved,
         rejected=rejected,

@@ -57,14 +57,21 @@ async def create_wizard(
     applicant_telegram_id: int,
     applicant_username: str | None,
     applicant_display_name: str | None,
-    application_id: int,
-    amount_cents: int,
+    amount_cents: int = 0,
+    teacher_id: int | None = None,
+    teacher_username_snapshot: str | None = None,
 ) -> ReimbursementRequest:
+    """创建报销 wizard 行。
+
+    v1.0.0-beta.3 起：与入群审核解耦。wizard 起始时尚未选老师，
+    teacher_id / amount_cents 在 set_teacher() 调用后才填。
+    """
     r = ReimbursementRequest(
         applicant_telegram_id=applicant_telegram_id,
         applicant_username=applicant_username,
         applicant_display_name=applicant_display_name,
-        application_id=application_id,
+        teacher_id=teacher_id,
+        teacher_username_snapshot=teacher_username_snapshot,
         status=REI_STATUS_WIZARD,
         wizard_step=1,
         amount_cents=amount_cents,
@@ -72,6 +79,21 @@ async def create_wizard(
     session.add(r)
     await session.flush()
     return r
+
+
+async def set_teacher(
+    session: AsyncSession,
+    r: ReimbursementRequest,
+    *,
+    teacher_id: int,
+    teacher_username: str,
+    amount_cents: int,
+) -> None:
+    """用户在 wizard step 1 选完老师后，把老师快照与金额落库。"""
+    r.teacher_id = teacher_id
+    r.teacher_username_snapshot = teacher_username
+    r.amount_cents = amount_cents
+    await session.flush()
 
 
 async def advance_step(

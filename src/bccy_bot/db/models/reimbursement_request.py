@@ -8,7 +8,7 @@ from bccy_bot.db.models.enums import REI_STATUS_WIZARD
 
 
 class ReimbursementRequest(Base):
-    """报销请求主表（[REQ §8.5.10]）。"""
+    """报销请求主表（[REQ §8.5.10]）。v1.0.0-beta.3 起与入群审核解耦：仅引用所选老师。"""
 
     __tablename__ = "reimbursement_requests"
     __table_args__ = (
@@ -22,10 +22,14 @@ class ReimbursementRequest(Base):
     applicant_telegram_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
     applicant_username: Mapped[str | None] = mapped_column(String(64), nullable=True)
     applicant_display_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    # 入群审核通过的那条申请；用于回溯申请人首次入群证据
-    application_id: Mapped[int] = mapped_column(
-        ForeignKey("applications.id"), index=True, nullable=False
+    # 报销老师；ON DELETE SET NULL 让历史记录在老师被删后仍可读
+    teacher_id: Mapped[int | None] = mapped_column(
+        ForeignKey("reimburse_teachers.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
     )
+    # 老师 username 在选定瞬间的快照，删老师后仍能展示给审核者/申请人
+    teacher_username_snapshot: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(
         String(16), default=REI_STATUS_WIZARD, nullable=False, index=True
     )

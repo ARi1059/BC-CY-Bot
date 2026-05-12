@@ -24,14 +24,25 @@ ADM_INV_ADD = "admin:inviters:add"
 ADM_INV_ADD_PICK_GRP_PREFIX = "admin:inviters:ag:"  # + group_id
 ADM_INV_ADD_TOGGLE_MAT_PREFIX = "admin:inviters:am:"  # + material short code (b/g/r)
 ADM_INV_ADD_SET_MODE_PREFIX = "admin:inviters:as:"  # + 'self' or 'deleg'
-ADM_INV_ADD_PICK_TIER_PREFIX = "admin:inviters:at:"  # + tier_cents (10000/15000/20000)
 ADM_INV_ADD_CONFIRM = "admin:inviters:ac"
 ADM_INV_ADD_CANCEL = "admin:inviters:ax"
 ADM_INV_TOGGLE_PREFIX = "admin:inviters:tg:"  # + id
 ADM_INV_REMOVE_PREFIX = "admin:inviters:rm:"  # + id
 ADM_INV_REMOVE_CONFIRM_PREFIX = "admin:inviters:rmc:"  # + id
-ADM_INV_SET_TIER_OPEN_PREFIX = "admin:inviters:to:"   # + inv_id  打开档位选择子键盘
-ADM_INV_SET_TIER_VALUE_PREFIX = "admin:inviters:tv:"  # + inv_id:tier_cents
+
+# === Reimburse Teachers (v1.0.0-beta.3) ===
+ADM_TEA_LIST = "admin:teachers"
+ADM_TEA_LIST_PREFIX = "admin:teachers:p:"
+ADM_TEA_ADD = "admin:teachers:add"
+ADM_TEA_ADD_PICK_TIER_PREFIX = "admin:teachers:at:"   # + tier_cents
+ADM_TEA_ADD_CONFIRM = "admin:teachers:ac"
+ADM_TEA_ADD_CANCEL = "admin:teachers:ax"
+ADM_TEA_TOGGLE_PREFIX = "admin:teachers:tg:"          # + teacher_id
+ADM_TEA_REMOVE_PREFIX = "admin:teachers:rm:"          # + teacher_id
+ADM_TEA_REMOVE_CONFIRM_PREFIX = "admin:teachers:rmc:"
+ADM_TEA_SET_TIER_OPEN_PREFIX = "admin:teachers:to:"   # + teacher_id
+ADM_TEA_SET_TIER_VALUE_PREFIX = "admin:teachers:tv:"  # + teacher_id:tier_cents
+ADM_TEA_SET_GROUP_OPEN_PREFIX = "admin:teachers:go:"  # + teacher_id (打开输入待新组别名)
 
 # === Blacklist ===
 ADM_BL_LIST = "admin:bl"
@@ -146,18 +157,26 @@ def parse_inv_list_page(d: str) -> int | None: return _parse_int_suffix(d, ADM_I
 def parse_inv_add_pick_grp(d: str) -> int | None: return _parse_int_suffix(d, ADM_INV_ADD_PICK_GRP_PREFIX)
 def parse_inv_add_toggle_mat(d: str) -> str | None: return _parse_str_suffix(d, ADM_INV_ADD_TOGGLE_MAT_PREFIX)
 def parse_inv_add_set_mode(d: str) -> str | None: return _parse_str_suffix(d, ADM_INV_ADD_SET_MODE_PREFIX)
-def parse_inv_add_pick_tier(d: str) -> int | None: return _parse_int_suffix(d, ADM_INV_ADD_PICK_TIER_PREFIX)
 def parse_inv_toggle(d: str) -> int | None: return _parse_int_suffix(d, ADM_INV_TOGGLE_PREFIX)
 def parse_inv_remove(d: str) -> int | None: return _parse_int_suffix(d, ADM_INV_REMOVE_PREFIX)
 def parse_inv_remove_confirm(d: str) -> int | None: return _parse_int_suffix(d, ADM_INV_REMOVE_CONFIRM_PREFIX)
-def parse_inv_set_tier_open(d: str) -> int | None: return _parse_int_suffix(d, ADM_INV_SET_TIER_OPEN_PREFIX)
 
 
-def parse_inv_set_tier_value(d: str) -> tuple[int, int] | None:
-    """解析 admin:inviters:tv:<inv_id>:<tier_cents> → (inv_id, tier_cents)。"""
-    if not d.startswith(ADM_INV_SET_TIER_VALUE_PREFIX):
+# === Teachers parsers ===
+def parse_tea_list_page(d: str) -> int | None: return _parse_int_suffix(d, ADM_TEA_LIST_PREFIX)
+def parse_tea_add_pick_tier(d: str) -> int | None: return _parse_int_suffix(d, ADM_TEA_ADD_PICK_TIER_PREFIX)
+def parse_tea_toggle(d: str) -> int | None: return _parse_int_suffix(d, ADM_TEA_TOGGLE_PREFIX)
+def parse_tea_remove(d: str) -> int | None: return _parse_int_suffix(d, ADM_TEA_REMOVE_PREFIX)
+def parse_tea_remove_confirm(d: str) -> int | None: return _parse_int_suffix(d, ADM_TEA_REMOVE_CONFIRM_PREFIX)
+def parse_tea_set_tier_open(d: str) -> int | None: return _parse_int_suffix(d, ADM_TEA_SET_TIER_OPEN_PREFIX)
+def parse_tea_set_group_open(d: str) -> int | None: return _parse_int_suffix(d, ADM_TEA_SET_GROUP_OPEN_PREFIX)
+
+
+def parse_tea_set_tier_value(d: str) -> tuple[int, int] | None:
+    """解析 admin:teachers:tv:<teacher_id>:<tier_cents> → (teacher_id, tier_cents)。"""
+    if not d.startswith(ADM_TEA_SET_TIER_VALUE_PREFIX):
         return None
-    rest = d[len(ADM_INV_SET_TIER_VALUE_PREFIX):]
+    rest = d[len(ADM_TEA_SET_TIER_VALUE_PREFIX):]
     parts = rest.split(":")
     if len(parts) != 2:
         return None

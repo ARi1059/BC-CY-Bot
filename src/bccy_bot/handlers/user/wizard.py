@@ -33,6 +33,7 @@ from bccy_bot.handlers.admin import (
     reimbursement as adm_rei_handlers,
     reimbursement_audit as adm_rev_handlers,
     settings_ui as adm_settings_handlers,
+    teachers as adm_teachers_handlers,
 )
 from bccy_bot.handlers.inviter import audit as inviter_audit
 from bccy_bot.handlers.user import recovery as recovery_handler
@@ -329,6 +330,7 @@ async def on_material_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         recovery_handler.consume_recovery_key_text,
         adm_groups_handlers.consume_add_group_forward,
         adm_inviters_handlers.consume_add_inviter_text,
+        adm_teachers_handlers.consume_text,
         adm_blacklist_handlers.consume_add_blacklist_text,
         adm_mgmt_handlers.consume_add_admin_text,
         adm_channels_handlers.consume_bind_channel_forward,

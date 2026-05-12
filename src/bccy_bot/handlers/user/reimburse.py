@@ -1,10 +1,19 @@
-"""用户侧报销 wizard：/reimburse 命令 + 4 层预校验 + 引导式提交。"""
+"""用户侧报销 wizard：/reimburse 命令 + 预校验 + 选老师 + 引导式材料提交。
+
+v1.0.0-beta.3：与入群审核解耦；wizard step 1 = 选老师。
+"""
 
 import structlog
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
-from bccy_bot.db.models.enums import CT_PHOTO, CT_TEXT, REI_STATUS_WIZARD
+from bccy_bot.db.models.enums import (
+    CT_PHOTO,
+    CT_TEXT,
+    REI_STATUS_WIZARD,
+    REI_TIER_LABELS,
+)
+from bccy_bot.db.models.reimburse_teacher import ReimburseTeacher
 from bccy_bot.db.models.reimbursement_material import ReimbursementMaterial
 from bccy_bot.db.models.reimbursement_request import ReimbursementRequest
 from bccy_bot.keyboards.reimburse_callbacks import (
@@ -12,11 +21,16 @@ from bccy_bot.keyboards.reimburse_callbacks import (
     REI_USER_CANCEL,
     REI_USER_CONFIRM_CANCEL,
     REI_USER_DISMISS,
+    REI_USER_PICK_TEACHER_PAGE_PREFIX,
+    REI_USER_PICK_TEACHER_PREFIX,
     REI_USER_PREVIEW_CONFIRM,
     REI_USER_PREVIEW_REDO,
+    parse_pick_teacher,
+    parse_teacher_page,
 )
 from bccy_bot.repositories import (
     blacklist_repo,
+    reimburse_teacher_repo,
     reimbursement_repo,
     reimbursement_settings,
 )
@@ -32,6 +46,9 @@ from bccy_bot.services.reimbursement_wizard_service import (
 from bccy_bot.utils.session import session_scope
 
 log = structlog.get_logger()
+
+
+TEACHERS_PER_PAGE = 6
 
 
 # ---------- 共用 ----------
@@ -51,6 +68,37 @@ def _material_step_keyboard(can_go_back: bool) -> InlineKeyboardMarkup:
         nav.append(InlineKeyboardButton("« 上一步", callback_data=REI_USER_BACK))
     nav.append(InlineKeyboardButton("❌ 取消申请", callback_data=REI_USER_CANCEL))
     return InlineKeyboardMarkup([nav])
+
+
+def _teacher_picker_keyboard(
+    teachers: list[ReimburseTeacher], page: int
+) -> InlineKeyboardMarkup:
+    start = page * TEACHERS_PER_PAGE
+    chunk = teachers[start : start + TEACHERS_PER_PAGE]
+    rows: list[list[InlineKeyboardButton]] = []
+    for t in chunk:
+        tier_label = REI_TIER_LABELS.get(
+            t.reimbursement_tier_cents, f"{t.reimbursement_tier_cents/100:.0f}元"
+        )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"👨‍🏫 {t.display_name} · {t.group_label} · 💰{tier_label}",
+                    callback_data=f"{REI_USER_PICK_TEACHER_PREFIX}{t.id}",
+                )
+            ]
+        )
+    # 翻页
+    total_pages = (len(teachers) + TEACHERS_PER_PAGE - 1) // TEACHERS_PER_PAGE
+    nav: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("« 上一页", callback_data=f"{REI_USER_PICK_TEACHER_PAGE_PREFIX}{page - 1}"))
+    if page + 1 < total_pages:
+        nav.append(InlineKeyboardButton("下一页 »", callback_data=f"{REI_USER_PICK_TEACHER_PAGE_PREFIX}{page + 1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton("❌ 取消申请", callback_data=REI_USER_CANCEL)])
+    return InlineKeyboardMarkup(rows)
 
 
 def _preview_keyboard() -> InlineKeyboardMarkup:
@@ -76,7 +124,7 @@ def _cancel_confirm_keyboard() -> InlineKeyboardMarkup:
 def _render_material_prompt(info: CurrentStepInfo) -> tuple[str, InlineKeyboardMarkup]:
     assert info.current_material_index is not None
     i = info.current_material_index + 1
-    n = rei_wizard.TOTAL_STEPS
+    n = rei_wizard.TOTAL_MATERIALS
     mt = info.current_material_type
     if info.expected_content_type == CT_PHOTO:
         action = f"请上传【{mt}】单张图片"
@@ -91,7 +139,8 @@ def _render_material_prompt(info: CurrentStepInfo) -> tuple[str, InlineKeyboardM
     )
     if hint:
         text += f"\n{hint}"
-    can_back = info.current_material_index > 0
+    # 第一项材料可"上一步"回到选老师；非第一项也可
+    can_back = True
     return text, _material_step_keyboard(can_back)
 
 
@@ -99,9 +148,15 @@ def _render_preview(
     request: ReimbursementRequest, materials: list[ReimbursementMaterial]
 ) -> tuple[str, InlineKeyboardMarkup]:
     amount_yuan = reimbursement_settings.cents_to_yuan_display(request.amount_cents)
+    teacher_line = (
+        f"@{request.teacher_username_snapshot}"
+        if request.teacher_username_snapshot
+        else "（未知）"
+    )
     lines = [
         "💰 报销申请 · 预览与提交",
         "─────────────────────────",
+        f"老师：{teacher_line}",
         f"金额：{amount_yuan} 元",
         "",
         "已提交材料：",
@@ -118,17 +173,79 @@ def _render_preview(
     return "\n".join(lines), _preview_keyboard()
 
 
-async def _send_step(update: Update, info: CurrentStepInfo, materials_for_preview=None) -> None:
+def _render_teacher_picker(
+    teachers: list[ReimburseTeacher], page: int
+) -> tuple[str, InlineKeyboardMarkup]:
+    text = (
+        "💰 报销申请 · 选择老师 (1/4)\n"
+        "─────────────────────────\n"
+        "请从下方选择本次报销对应的老师。\n"
+        "选定后金额按该老师档位结算（100/150/200 元）。"
+    )
+    return text, _teacher_picker_keyboard(teachers, page)
+
+
+async def _send_teacher_picker(
+    update: Update, session, page: int = 0
+) -> None:
     msg = update.effective_message
     if msg is None:
         return
-    if info.is_preview:
+    teachers = await reimburse_teacher_repo.list_active(session)
+    if not teachers:
+        await msg.reply_text(
+            "⚠️ 当前未配置可用的报销老师，请联系管理员。"
+        )
+        return
+    text, kb = _render_teacher_picker(teachers, page)
+    if update.callback_query is not None:
+        try:
+            await update.callback_query.edit_message_text(text, reply_markup=kb)
+            return
+        except Exception:  # noqa: BLE001
+            pass
+    await msg.reply_text(text, reply_markup=kb)
+
+
+async def _send_step(
+    update: Update,
+    info: CurrentStepInfo,
+    *,
+    teachers: list[ReimburseTeacher] | None = None,
+    materials_for_preview=None,
+) -> None:
+    msg = update.effective_message
+    if msg is None:
+        return
+    if info.is_teacher_select:
+        # 调用方应该提供 teachers 列表
+        if not teachers:
+            await msg.reply_text("⚠️ 当前未配置可用的报销老师，请联系管理员。")
+            return
+        text, kb = _render_teacher_picker(teachers, 0)
+    elif info.is_preview:
         if materials_for_preview is None:
             materials_for_preview = []
         text, kb = _render_preview(info.request, materials_for_preview)
     else:
         text, kb = _render_material_prompt(info)
     await msg.reply_text(text, reply_markup=kb)
+
+
+def _render_missing(missing: list[str], errored: list[str]) -> str:
+    lines = ["⚠️ 您不符合报销资格，缺失以下订阅："]
+    if missing:
+        for name in missing:
+            lines.append(f"• {name}")
+    if errored:
+        lines.append("")
+        lines.append("⚙️ 以下条目暂时无法查询（可能是 Bot 权限/网络），请稍后再试或联系管理员：")
+        for name in errored:
+            lines.append(f"• {name}")
+    if not missing and not errored:
+        # 兜底：管理员未配置任何资格条目
+        lines.append("（暂未配置资格条目，请联系管理员先配置后再申请）")
+    return "\n".join(lines)
 
 
 # ---------- 入口：/reimburse + 欢迎卡片按钮 ----------
@@ -148,28 +265,28 @@ async def on_start_from_welcome(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def _enter_reimburse(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """4 层预校验 → 创建 wizard → 显示第 1 步。"""
     user = update.effective_user
     if user is None or update.effective_message is None:
         return
 
     async with session_scope(context) as session:
-        # 黑名单（独立于 precheck，与 /start 行为一致）
+        # 黑名单
         if await blacklist_repo.is_blacklisted(session, user.id):
             await update.effective_message.reply_text("❌ 您的账号已被限制使用本服务。")
             return
 
-        # 1-2-3-4：disabled / no_approved_app / has_active / cooldown / budget
         pre = await rei_wizard.precheck(session, applicant_telegram_id=user.id)
 
-        # has_active 单独处理：用户已有进行中的报销 wizard → 直接续上
+        # has_active：续上当前步骤
         if pre.reason_code == "has_active_request":
             active = await reimbursement_repo.get_active_for_user(session, user.id)
             if active is not None and active.status == REI_STATUS_WIZARD:
                 info = rei_wizard.resolve_step(active)
-                if info.is_preview:
+                if info.is_teacher_select:
+                    await _send_teacher_picker(update, session, page=0)
+                elif info.is_preview:
                     materials = await reimbursement_repo.list_materials(session, active.id)
-                    await _send_step(update, info, materials)
+                    await _send_step(update, info, materials_for_preview=materials)
                 else:
                     await _send_step(update, info)
                 return
@@ -181,7 +298,7 @@ async def _enter_reimburse(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             await update.effective_message.reply_text(f"⚠️ {pre.user_message}")
             return
 
-        # 资格群成员校验（需要 bot 实例 + bot_data 缓存）
+        # 资格群成员校验
         elig = await eligibility_service.check_membership(
             session,
             context.bot,
@@ -196,27 +313,65 @@ async def _enter_reimburse(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 errored=elig.error_chat_names,
             )
             await update.effective_message.reply_text(
-                "⚠️ 您不符合报销资格，请联系管理员。"
+                _render_missing(elig.missing_chat_names, elig.error_chat_names)
             )
             return
 
-        # 全部通过 → 创建 wizard
-        request = await rei_wizard.create_request(
+        # 全部通过 → 创建 wizard（step=1 选老师）
+        await rei_wizard.create_request(
             session,
             applicant_telegram_id=user.id,
             applicant_username=user.username,
             applicant_display_name=user.full_name,
-            application_id=pre.application_id,
-            amount_cents=pre.amount_cents,
         )
-        info = rei_wizard.resolve_step(request)
+        await _send_teacher_picker(update, session, page=0)
 
-    intro = (
-        f"💰 报销申请开始\n"
-        f"金额：{reimbursement_settings.cents_to_yuan_display(pre.amount_cents)} 元\n"
-        f"请按提示提交 {rei_wizard.TOTAL_STEPS} 项材料。"
-    )
-    await update.effective_message.reply_text(intro)
+
+# ---------- step 1：选老师 ----------
+
+
+async def on_pick_teacher_page(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    await _ack(update)
+    if update.effective_user is None or update.callback_query is None:
+        return
+    page = parse_teacher_page(update.callback_query.data or "")
+    if page is None or page < 0:
+        return
+    async with session_scope(context) as session:
+        await _send_teacher_picker(update, session, page=page)
+
+
+async def on_pick_teacher(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _ack(update)
+    if update.effective_user is None or update.callback_query is None:
+        return
+    tid = parse_pick_teacher(update.callback_query.data or "")
+    if tid is None:
+        return
+    async with session_scope(context) as session:
+        active = await reimbursement_repo.get_active_for_user(session, update.effective_user.id)
+        if active is None or active.status != REI_STATUS_WIZARD:
+            return
+        try:
+            teacher = await rei_wizard.set_teacher(session, active, teacher_id=tid)
+        except ReimbursementWizardError as e:
+            if update.effective_message is not None:
+                await update.effective_message.reply_text(f"⚠️ {e}")
+            return
+        info = rei_wizard.resolve_step(active)
+
+    if update.effective_message is not None:
+        tier_label = REI_TIER_LABELS.get(
+            teacher.reimbursement_tier_cents,
+            f"{teacher.reimbursement_tier_cents/100:.0f}元",
+        )
+        await update.effective_message.reply_text(
+            f"✅ 已选老师 @{teacher.telegram_username}（{teacher.display_name} · {teacher.group_label}）\n"
+            f"金额：💰 {tier_label}\n"
+            f"接下来按提示提交 {rei_wizard.TOTAL_MATERIALS} 项材料。"
+        )
     await _send_step(update, info)
 
 
@@ -267,8 +422,13 @@ async def on_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if active is None or active.status != REI_STATUS_WIZARD:
             return
         info = await rei_wizard.go_back(session, active)
-        materials = await reimbursement_repo.list_materials(session, active.id) if info.is_preview else None
-    await _send_step(update, info, materials)
+        teachers = None
+        materials = None
+        if info.is_teacher_select:
+            teachers = await reimburse_teacher_repo.list_active(session)
+        elif info.is_preview:
+            materials = await reimbursement_repo.list_materials(session, active.id)
+    await _send_step(update, info, teachers=teachers, materials_for_preview=materials)
 
 
 # ---------- 预览操作 ----------
@@ -329,10 +489,6 @@ async def on_preview_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def consume_material_message(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> bool:
-    """
-    检查用户是否在报销 wizard 状态，若是则消费此 photo/text 消息。
-    返回 True 表示已消费，由 wizard.on_material_message dispatch 链调用。
-    """
     if update.effective_user is None or update.message is None:
         return False
 
@@ -344,6 +500,9 @@ async def consume_material_message(
             return False
 
         info = rei_wizard.resolve_step(active)
+        if info.is_teacher_select:
+            await update.message.reply_text("请先在上方按钮中选择报销老师。")
+            return True
         if info.is_preview:
             await update.message.reply_text("已进入预览阶段，请使用下方按钮提交或重做。")
             return True
@@ -382,5 +541,5 @@ async def consume_material_message(
         )
 
     await update.message.reply_text("✅ 已收到，下一步：")
-    await _send_step(update, new_info, materials)
+    await _send_step(update, new_info, materials_for_preview=materials)
     return True

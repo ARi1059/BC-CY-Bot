@@ -1,13 +1,14 @@
 """
-报销 wizard 状态机（[REQ §8.5.3.2]）。
+报销 wizard 状态机（[REQ §8.5.3.2]，[v1.0.0-beta.3] 与入群审核解耦）。
+
+wizard_step 编码：
+- 1 = 等待选老师
+- 2 = 等待约课记录（photo）
+- 3 = 等待上课手势（photo）
+- 4 = 等待出击报告（text）
+- 5 = 预览
 
 固定 3 项材料：约课记录(photo) / 上课手势(photo) / 出击报告(text)
-wizard_step 编码：
-- 1 = 等待约课记录
-- 2 = 等待上课手势
-- 3 = 等待出击报告
-- 4 = 预览
-
 服务层零 telegram.* 依赖，handler 拆解 Update 后调用。
 """
 
@@ -17,9 +18,7 @@ from datetime import datetime, timedelta, timezone
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bccy_bot.db.models.application import Application
 from bccy_bot.db.models.enums import (
-    APP_STATUS_APPROVED,
     CT_PHOTO,
     CT_TEXT,
     MAT_BOOKING,
@@ -28,10 +27,11 @@ from bccy_bot.db.models.enums import (
     REI_STATUS_PENDING,
     REI_STATUS_WIZARD,
 )
-from bccy_bot.db.models.inviter import Inviter
+from bccy_bot.db.models.reimburse_teacher import ReimburseTeacher
 from bccy_bot.db.models.reimbursement_material import ReimbursementMaterial
 from bccy_bot.db.models.reimbursement_request import ReimbursementRequest
 from bccy_bot.repositories import (
+    reimburse_teacher_repo,
     reimbursement_override_repo,
     reimbursement_repo,
     reimbursement_settings,
@@ -40,14 +40,20 @@ from bccy_bot.repositories import (
 log = structlog.get_logger()
 
 
-# 固定 3 项，顺序即步骤
+# 固定 3 项，顺序即材料子步骤
 MATERIALS_ORDER: list[str] = [MAT_BOOKING, MAT_GESTURE, MAT_REPORT]
 MATERIAL_CONTENT_TYPE: dict[str, str] = {
     MAT_BOOKING: CT_PHOTO,
     MAT_GESTURE: CT_PHOTO,
     MAT_REPORT: CT_TEXT,
 }
-TOTAL_STEPS = len(MATERIALS_ORDER)  # 3
+
+# step 编码常量（统一处理避免散落魔术数）
+TEACHER_STEP = 1
+FIRST_MATERIAL_STEP = 2
+LAST_MATERIAL_STEP = FIRST_MATERIAL_STEP + len(MATERIALS_ORDER) - 1  # 4
+PREVIEW_STEP = LAST_MATERIAL_STEP + 1  # 5
+TOTAL_MATERIALS = len(MATERIALS_ORDER)  # 3
 
 
 class ReimbursementWizardError(Exception):
@@ -60,13 +66,9 @@ class ReimbursementWizardError(Exception):
 @dataclass
 class PreCheckResult:
     ok: bool
-    reason_code: str  # 'ok' | 'disabled' | 'no_approved_app' | 'eligibility_failed'
-                     # | 'cooldown' | 'budget_insufficient' | 'has_active_request'
-                     # | 'no_inviter_tier'
+    reason_code: str  # 'ok' | 'disabled' | 'has_active_request' | 'cooldown'
     user_message: str
-    application_id: int | None = None  # ok 路径：使用的入群审核 application
-    cooldown_days_remaining: int | None = None  # cooldown 路径
-    amount_cents: int = 0  # 报销金额（来自申请人所属邀请人的档位）
+    cooldown_days_remaining: int | None = None
 
 
 async def precheck(
@@ -75,11 +77,12 @@ async def precheck(
     applicant_telegram_id: int,
 ) -> PreCheckResult:
     """
-    报销发起前的 4 层预校验（[REQ §8.5.3.1]）。
+    报销发起前的预校验（v1.0.0-beta.3 起，已解耦入群审核）。
 
-    资格群成员校验在 handler 里单独完成（需要 bot 实例），不在此处。
+    资格群成员校验、月预算校验、老师档位分别在 handler / set_teacher 阶段完成，
+    本函数只覆盖与"该用户能否开始一份新 wizard"相关的判定。
     """
-    # 1. 总开关
+    # 1. 总开关 + 月预算 > 0（最基本的"系统是否就绪"）
     enabled = await reimbursement_settings.is_enabled(session)
     if not enabled:
         return PreCheckResult(
@@ -96,55 +99,16 @@ async def precheck(
             user_message="报销功能尚未配置完成（月预算未设），请联系管理员。",
         )
 
-    # 2. 必须有 approved 入群审核
-    from sqlalchemy import select
-
-    approved = (
-        await session.execute(
-            select(Application)
-            .where(
-                Application.applicant_telegram_id == applicant_telegram_id,
-                Application.status == APP_STATUS_APPROVED,
-            )
-            .order_by(Application.reviewed_at.desc())
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    if approved is None:
-        return PreCheckResult(
-            ok=False,
-            reason_code="no_approved_app",
-            user_message="您尚未通过入群审核，无法申请报销。",
-        )
-
-    # 2.5 该申请对应的邀请人必须存在，并据此决定报销金额
-    if approved.inviter_id is None:
-        return PreCheckResult(
-            ok=False,
-            reason_code="no_inviter_tier",
-            user_message="该入群申请缺少邀请人信息，无法确定报销金额，请联系管理员。",
-        )
-    inviter = await session.get(Inviter, approved.inviter_id)
-    if inviter is None:
-        return PreCheckResult(
-            ok=False,
-            reason_code="no_inviter_tier",
-            user_message="该入群申请对应的邀请人已被删除，请联系管理员。",
-        )
-    amount_cents = int(inviter.reimbursement_tier_cents)
-
-    # 3. 是否已有进行中的报销
+    # 2. 是否已有进行中的报销
     active = await reimbursement_repo.get_active_for_user(session, applicant_telegram_id)
     if active is not None:
         return PreCheckResult(
             ok=False,
             reason_code="has_active_request",
             user_message="您已有一份进行中的报销申请，请先完成或取消。",
-            application_id=approved.id,
-            amount_cents=amount_cents,
         )
 
-    # 4. 冷却时间
+    # 3. 冷却时间（基于最近一次完成的报销）
     last = await reimbursement_repo.get_last_completed_for_user(session, applicant_telegram_id)
     if last is not None and last.reviewed_at is not None:
         override = await reimbursement_override_repo.find_for_user(session, applicant_telegram_id)
@@ -166,26 +130,7 @@ async def precheck(
                 cooldown_days_remaining=int(remaining + 0.999),
             )
 
-    # 5. 月预算是否足够再发一次
-    remaining_budget = await reimbursement_settings.get_monthly_remaining_cents(session)
-    if remaining_budget < amount_cents:
-        return PreCheckResult(
-            ok=False,
-            reason_code="budget_insufficient",
-            user_message=(
-                f"本月预算余额（{reimbursement_settings.cents_to_yuan_display(remaining_budget)} 元）"
-                f"不足以支付一次报销（{reimbursement_settings.cents_to_yuan_display(amount_cents)} 元），"
-                "请月初再试。"
-            ),
-        )
-
-    return PreCheckResult(
-        ok=True,
-        reason_code="ok",
-        user_message="",
-        application_id=approved.id,
-        amount_cents=amount_cents,
-    )
+    return PreCheckResult(ok=True, reason_code="ok", user_message="")
 
 
 # ---------- 当前步骤元信息 ----------
@@ -194,7 +139,8 @@ async def precheck(
 @dataclass
 class CurrentStepInfo:
     request: ReimbursementRequest
-    current_material_index: int | None  # 0-based；None 表示在预览
+    is_teacher_select: bool
+    current_material_index: int | None  # 0-based；None 表示在预览或选老师
     current_material_type: str | None
     expected_content_type: str | None
     is_preview: bool
@@ -202,18 +148,29 @@ class CurrentStepInfo:
 
 def resolve_step(request: ReimbursementRequest) -> CurrentStepInfo:
     step = request.wizard_step
-    if step > TOTAL_STEPS:
+    if step == TEACHER_STEP:
         return CurrentStepInfo(
             request=request,
+            is_teacher_select=True,
+            current_material_index=None,
+            current_material_type=None,
+            expected_content_type=None,
+            is_preview=False,
+        )
+    if step >= PREVIEW_STEP:
+        return CurrentStepInfo(
+            request=request,
+            is_teacher_select=False,
             current_material_index=None,
             current_material_type=None,
             expected_content_type=None,
             is_preview=True,
         )
-    idx = step - 1
+    idx = step - FIRST_MATERIAL_STEP
     mt = MATERIALS_ORDER[idx]
     return CurrentStepInfo(
         request=request,
+        is_teacher_select=False,
         current_material_index=idx,
         current_material_type=mt,
         expected_content_type=MATERIAL_CONTENT_TYPE[mt],
@@ -230,18 +187,61 @@ async def create_request(
     applicant_telegram_id: int,
     applicant_username: str | None,
     applicant_display_name: str | None,
-    application_id: int,
-    amount_cents: int,
 ) -> ReimbursementRequest:
-    """precheck 通过后调用。直接进入 wizard_step=1。amount_cents 来自该申请人邀请人的档位快照。"""
+    """precheck 通过后调用，进入 wizard_step=1（选老师），未选老师前 teacher_id/amount 为空。"""
     return await reimbursement_repo.create_wizard(
         session,
         applicant_telegram_id=applicant_telegram_id,
         applicant_username=applicant_username,
         applicant_display_name=applicant_display_name,
-        application_id=application_id,
-        amount_cents=amount_cents,
+        amount_cents=0,
+        teacher_id=None,
+        teacher_username_snapshot=None,
     )
+
+
+# ---------- 选老师 ----------
+
+
+async def set_teacher(
+    session: AsyncSession,
+    request: ReimbursementRequest,
+    *,
+    teacher_id: int,
+) -> ReimburseTeacher:
+    """
+    在 wizard_step=1 阶段把老师快照写入 request 并推进到 step=2（材料 1）。
+
+    顺手做"月预算 >= 该老师档位"的校验（此时金额已确定）。
+    """
+    if request.status != REI_STATUS_WIZARD:
+        raise ReimbursementWizardError("当前申请已不在编辑状态。")
+    if request.wizard_step != TEACHER_STEP:
+        raise ReimbursementWizardError("当前步骤已超过选老师，不允许重新选择。")
+
+    teacher = await reimburse_teacher_repo.get_by_id(session, teacher_id)
+    if teacher is None or not teacher.is_active:
+        raise ReimbursementWizardError("所选老师不存在或已停用，请重新选择。")
+
+    # 选定老师瞬间快照金额；月预算检查也只能在此时做
+    amount = int(teacher.reimbursement_tier_cents)
+    remaining_budget = await reimbursement_settings.get_monthly_remaining_cents(session)
+    if remaining_budget < amount:
+        raise ReimbursementWizardError(
+            f"本月预算余额（{reimbursement_settings.cents_to_yuan_display(remaining_budget)} 元）"
+            f"不足以支付该老师档位（{reimbursement_settings.cents_to_yuan_display(amount)} 元），"
+            "请月初再试或换一位档位更低的老师。"
+        )
+
+    await reimbursement_repo.set_teacher(
+        session,
+        request,
+        teacher_id=teacher.id,
+        teacher_username=teacher.telegram_username,
+        amount_cents=amount,
+    )
+    await reimbursement_repo.advance_step(session, request, FIRST_MATERIAL_STEP)
+    return teacher
 
 
 # ---------- 材料提交 / 回退 / 重做 / 确认 ----------
@@ -261,6 +261,8 @@ async def submit_material(
         raise ReimbursementWizardError("当前申请已不在编辑状态。")
 
     info = resolve_step(request)
+    if info.is_teacher_select:
+        raise ReimbursementWizardError("请先选择报销老师。")
     if info.is_preview:
         raise ReimbursementWizardError("已进入预览阶段，请使用下方按钮提交或重做。")
 
@@ -313,14 +315,33 @@ async def go_back(
     info = resolve_step(request)
 
     if info.is_preview:
-        # 退回最后一项材料步骤
-        await reimbursement_repo.advance_step(session, request, TOTAL_STEPS)
+        # 退回到最后一项材料步骤
+        await reimbursement_repo.advance_step(session, request, LAST_MATERIAL_STEP)
         return resolve_step(request)
 
-    if info.current_material_index == 0:
-        # 第一步无可退；handler 应当不显示 [« 上一步]
+    if info.is_teacher_select:
+        # 选老师阶段是起点，无可退
         return info
 
+    # 在某项材料步：
+    if info.current_material_index == 0:
+        # 第一项材料 → 退回选老师；清除老师快照 + 清掉所有已传材料
+        await reimbursement_repo.clear_materials(session, request.id)
+        await reimbursement_repo.set_teacher(
+            session,
+            request,
+            teacher_id=0,  # 用 0 表示"清空"语义，set_teacher 内部处理
+            teacher_username="",
+            amount_cents=0,
+        )
+        # set_teacher 不接受 0；改为直接清字段
+        request.teacher_id = None
+        request.teacher_username_snapshot = None
+        request.amount_cents = 0
+        await reimbursement_repo.advance_step(session, request, TEACHER_STEP)
+        return resolve_step(request)
+
+    # 其他材料步：删最后一项材料并 step -= 1
     materials = await reimbursement_repo.list_materials(session, request.id)
     if materials:
         await session.delete(materials[-1])
@@ -336,7 +357,7 @@ async def redo_materials(
     if not info.is_preview:
         raise ReimbursementWizardError("当前不在预览页，无法重新提交。")
     await reimbursement_repo.clear_materials(session, request.id)
-    await reimbursement_repo.advance_step(session, request, 1)
+    await reimbursement_repo.advance_step(session, request, FIRST_MATERIAL_STEP)
     return resolve_step(request)
 
 
@@ -346,6 +367,9 @@ async def confirm_submit(
     info = resolve_step(request)
     if not info.is_preview:
         raise ReimbursementWizardError("尚未完成所有材料提交，无法确认。")
+
+    if request.teacher_id is None or request.amount_cents <= 0:
+        raise ReimbursementWizardError("缺少老师信息，请回到第一步重选。")
 
     materials = await reimbursement_repo.list_materials(session, request.id)
     submitted_types = sorted([m.material_type for m in materials])
