@@ -80,10 +80,15 @@ from bccy_bot.keyboards.admin_callbacks import (
     ADM_REI_ELIG_ADD,
     ADM_REI_ELIG_REMOVE_CONFIRM_PREFIX,
     ADM_REI_ELIG_REMOVE_PREFIX,
+    ADM_REI_APPROVED_LIST,
+    ADM_REI_HISTORY_LIST,
     ADM_REI_OVERRIDE_ADD,
     ADM_REI_OVERRIDE_REMOVE_CONFIRM_PREFIX,
     ADM_REI_OVERRIDE_REMOVE_PREFIX,
     ADM_REI_OVERRIDES,
+    ADM_REI_PENDING_LIST,
+    ADM_REI_RESEND_AUDIT_PREFIX,
+    ADM_REI_RESEND_PAYMENT_PREFIX,
     ADM_REI_RESET_REMAINING,
     ADM_REI_SET_AMOUNT,
     ADM_REI_SET_BUDGET,
@@ -132,8 +137,11 @@ from bccy_bot.keyboards.reimburse_audit_callbacks import (
     REV_REJECT_SKIP_PREFIX,
     REV_VIEW_PREFIX,
 )
+from bccy_bot.repositories import admin_repo as admin_repo_pkg
 from bccy_bot.repositories.admin_repo import ensure_initial_super_admin
 from bccy_bot.services import link_tracking_service
+from bccy_bot.services import reimbursement_reports_service as rei_reports
+from bccy_bot.utils.retry import telegram_retry
 from bccy_bot.utils.session import get_session_factory
 
 log = structlog.get_logger()
@@ -163,6 +171,28 @@ async def _post_init(application: Application) -> None:
         )
         log.info("expired_link_sweep_scheduled", interval_sec=3600)
 
+        # 报销系统：每天 00:00 检查是否需要重置月预算
+        from datetime import time as _time
+
+        application.job_queue.run_daily(
+            _reimbursement_budget_reset_job,
+            time=_time(0, 0, 5),
+            name="reimbursement_budget_reset",
+        )
+        # 周报：每天 00:05 跑一次，job 内部判断是否为周一
+        application.job_queue.run_daily(
+            _reimbursement_weekly_report_job,
+            time=_time(0, 5, 0),
+            name="reimbursement_weekly_report",
+        )
+        # 月报：每天 00:10 跑一次，job 内部判断是否为 1 号
+        application.job_queue.run_daily(
+            _reimbursement_monthly_report_job,
+            time=_time(0, 10, 0),
+            name="reimbursement_monthly_report",
+        )
+        log.info("reimbursement_jobs_scheduled")
+
 
 async def _sweep_expired_links_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """JobQueue 回调：扫描标记过期链接 + 推送日志频道。"""
@@ -176,6 +206,77 @@ async def _sweep_expired_links_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         except Exception:  # noqa: BLE001
             await session.rollback()
             log.exception("expired_link_sweep_failed")
+
+
+@telegram_retry(max_attempts=3)
+async def _dm(bot, chat_id: int, text: str) -> None:
+    await bot.send_message(chat_id=chat_id, text=text, disable_notification=True)
+
+
+async def _reimbursement_budget_reset_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """每天 00:00 跑：若当日是 reset_day 则把 monthly_remaining 重置回 monthly_budget。"""
+    factory = get_session_factory(context)
+    async with factory() as session:
+        try:
+            did_reset = await rei_reports.maybe_reset_monthly_budget(session)
+            await session.commit()
+            if did_reset:
+                log.info("reimbursement_budget_reset_done")
+        except Exception:  # noqa: BLE001
+            await session.rollback()
+            log.exception("reimbursement_budget_reset_failed")
+
+
+async def _reimbursement_weekly_report_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """周一 00:05 跑：生成上周周报并私聊所有超级管理员。"""
+    if not rei_reports.should_run_weekly_today():
+        return
+    factory = get_session_factory(context)
+    async with factory() as session:
+        try:
+            text = await rei_reports.generate_weekly_report_text(session)
+            supers = [
+                a for a in await admin_repo_pkg.list_all(session) if a.role == "super"
+            ]
+        except Exception:  # noqa: BLE001
+            log.exception("reimbursement_weekly_report_build_failed")
+            return
+
+    for adm in supers:
+        try:
+            await _dm(context.bot, adm.telegram_user_id, text)
+        except Exception:  # noqa: BLE001
+            log.exception(
+                "reimbursement_weekly_report_send_failed",
+                admin_telegram_id=adm.telegram_user_id,
+            )
+    log.info("reimbursement_weekly_report_done", recipients=len(supers))
+
+
+async def _reimbursement_monthly_report_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """每月 1 号 00:10 跑：生成上月月报并私聊所有超级管理员。"""
+    if not rei_reports.should_run_monthly_today():
+        return
+    factory = get_session_factory(context)
+    async with factory() as session:
+        try:
+            text = await rei_reports.generate_monthly_report_text(session)
+            supers = [
+                a for a in await admin_repo_pkg.list_all(session) if a.role == "super"
+            ]
+        except Exception:  # noqa: BLE001
+            log.exception("reimbursement_monthly_report_build_failed")
+            return
+
+    for adm in supers:
+        try:
+            await _dm(context.bot, adm.telegram_user_id, text)
+        except Exception:  # noqa: BLE001
+            log.exception(
+                "reimbursement_monthly_report_send_failed",
+                admin_telegram_id=adm.telegram_user_id,
+            )
+    log.info("reimbursement_monthly_report_done", recipients=len(supers))
 
 
 async def _post_shutdown(application: Application) -> None:
@@ -471,6 +572,26 @@ def build_application() -> Application:
         CallbackQueryHandler(
             adm_rei.on_override_remove_confirm,
             pattern=f"^{ADM_REI_OVERRIDE_REMOVE_CONFIRM_PREFIX}\\d+$",
+        )
+    )
+    # M14: 待审核 / 待付款 / 历史 / 行内动作
+    application.add_handler(
+        CallbackQueryHandler(adm_rei.on_pending_list, pattern=f"^{ADM_REI_PENDING_LIST}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_rei.on_approved_list, pattern=f"^{ADM_REI_APPROVED_LIST}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(adm_rei.on_history_list, pattern=f"^{ADM_REI_HISTORY_LIST}$")
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            adm_rei.on_resend_audit, pattern=f"^{ADM_REI_RESEND_AUDIT_PREFIX}\\d+$"
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            adm_rei.on_resend_payment, pattern=f"^{ADM_REI_RESEND_PAYMENT_PREFIX}\\d+$"
         )
     )
 

@@ -17,14 +17,19 @@ from bccy_bot.keyboards.admin_callbacks import (
     ADM_CONFIG_EDIT_TTL,
     ADM_DISMISS,
     ADM_REI,
+    ADM_REI_APPROVED_LIST,
     ADM_REI_ELIG,
     ADM_REI_ELIG_ADD,
     ADM_REI_ELIG_REMOVE_CONFIRM_PREFIX,
     ADM_REI_ELIG_REMOVE_PREFIX,
+    ADM_REI_HISTORY_LIST,
     ADM_REI_OVERRIDE_ADD,
     ADM_REI_OVERRIDE_REMOVE_CONFIRM_PREFIX,
     ADM_REI_OVERRIDE_REMOVE_PREFIX,
     ADM_REI_OVERRIDES,
+    ADM_REI_PENDING_LIST,
+    ADM_REI_RESEND_AUDIT_PREFIX,
+    ADM_REI_RESEND_PAYMENT_PREFIX,
     ADM_REI_RESET_REMAINING,
     ADM_REI_SET_AMOUNT,
     ADM_REI_SET_BUDGET,
@@ -371,12 +376,60 @@ def dismiss_keyboard() -> InlineKeyboardMarkup:
 def reimbursement_main_keyboard(is_super: bool) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = [
         [InlineKeyboardButton("📋 系统配置", callback_data=ADM_REI_SETTINGS)],
+        [
+            InlineKeyboardButton("📥 待审核", callback_data=ADM_REI_PENDING_LIST),
+            InlineKeyboardButton("💸 待付款", callback_data=ADM_REI_APPROVED_LIST),
+        ],
+        [InlineKeyboardButton("📜 历史记录", callback_data=ADM_REI_HISTORY_LIST)],
         [InlineKeyboardButton("🎯 资格列表", callback_data=ADM_REI_ELIG)],
     ]
     if is_super:
         rows.append([InlineKeyboardButton("🛡 用户冷却覆盖", callback_data=ADM_REI_OVERRIDES)])
     rows.append(_back_row())
     return InlineKeyboardMarkup(rows)
+
+
+def reimbursement_pending_list_keyboard(rows_data) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for r in rows_data[:20]:
+        label = f"#R{r.id} · {r.applicant_username or r.applicant_telegram_id}"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    label,
+                    callback_data=f"{ADM_REI_RESEND_AUDIT_PREFIX}{r.id}",
+                ),
+                InlineKeyboardButton(
+                    "👁 重发",
+                    callback_data=f"{ADM_REI_RESEND_AUDIT_PREFIX}{r.id}",
+                ),
+            ]
+        )
+    rows.append([InlineKeyboardButton("« 返回报销管理", callback_data=ADM_REI)])
+    return InlineKeyboardMarkup(rows)
+
+
+def reimbursement_approved_list_keyboard(rows_data) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    for r in rows_data[:20]:
+        label = f"#R{r.id} · {r.applicant_username or r.applicant_telegram_id}"
+        rows.append(
+            [
+                InlineKeyboardButton(label, callback_data=ADM_REI_APPROVED_LIST),
+                InlineKeyboardButton(
+                    "💸 补发口令",
+                    callback_data=f"{ADM_REI_RESEND_PAYMENT_PREFIX}{r.id}",
+                ),
+            ]
+        )
+    rows.append([InlineKeyboardButton("« 返回报销管理", callback_data=ADM_REI)])
+    return InlineKeyboardMarkup(rows)
+
+
+def reimbursement_history_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("« 返回报销管理", callback_data=ADM_REI)]]
+    )
 
 
 def reimbursement_settings_keyboard(is_super: bool, enabled: bool) -> InlineKeyboardMarkup:
