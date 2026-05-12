@@ -5,6 +5,25 @@
 
 ---
 
+## Unreleased
+
+### Changed
+- **部署形态从 Docker 切换为原生 systemd + 原生 PostgreSQL**。`Dockerfile` 与 `docker-compose.yml` 移除；新增 `contrib/bccy-bot.service` systemd unit 模板。
+- DEPLOYMENT.md / README.md / TESTING.md / OPERATIONS.md 全部刷新为 systemd 路径与 `journalctl` 日志检索方式。
+- `.env.example` 的 `DATABASE_URL` 默认值改为本机 PostgreSQL 连接串；移除 Docker 专属的 `POSTGRES_PASSWORD`。
+
+### Migration
+旧的 Docker 部署 → 新原生部署的迁移路径：
+1. `docker compose exec -T postgres pg_dump -U bccy bccy > backup.sql` 导出现有数据
+2. 在目标主机按 [DEPLOYMENT.md §2–§3](DEPLOYMENT.md) 装原生 PG + 建账号 + 建 db
+3. `psql -U bccy -h 127.0.0.1 -d bccy -f backup.sql` 恢复数据
+4. `pip install .` + 装 systemd unit 后 `systemctl enable --now bccy-bot`
+5. 验证 `journalctl -u bccy-bot` 看到 `super_admin_ensured` → 成功
+
+> 旧的 docker-compose stack 可保留几天作为应急回滚来源，再删除。
+
+---
+
 ## [1.0.0-beta.2] - 2026-05-12
 
 报销金额从"全局一档"切换为"按邀请人差异化"。每位邀请人在 100 / 150 / 200 元三档中由超级管理员选定其一；

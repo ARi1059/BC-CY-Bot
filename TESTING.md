@@ -8,8 +8,8 @@
 
 ## 0. 启动验证
 
-- [ ] `docker compose up -d --build` 启动成功
-- [ ] `docker compose logs bot | grep super_admin_ensured` 看到 `action=created`（首次）或 `noop`（重启）
+- [ ] `sudo systemctl start bccy-bot` 启动成功（`is-active` 返回 `active`）
+- [ ] `sudo journalctl -u bccy-bot | grep super_admin_ensured` 看到 `action=created`（首次）或 `noop`（重启）
 - [ ] 私聊 Bot 发 `/start` → 看到欢迎卡片
 - [ ] 私聊 Bot 发 `/admin`（超管）→ 看到管理面板，其中 `[⚙️ 系统配置]` 按钮**可见**
 
@@ -165,9 +165,9 @@
 ## 12. 应急换超管
 
 - [ ] SSH 登录服务器
-- [ ] `vim .env` → `INITIAL_SUPER_ADMIN_ID` 改为账号 D 的 ID
-- [ ] `docker compose restart bot`
-- [ ] `docker compose logs bot | grep super_admin_ensured` → `action=overridden`
+- [ ] `sudo vim /opt/BC-CY-Bot/.env` → `INITIAL_SUPER_ADMIN_ID` 改为账号 D 的 ID
+- [ ] `sudo systemctl restart bccy-bot`
+- [ ] `sudo journalctl -u bccy-bot | grep super_admin_ensured` → `action=overridden`
 - [ ] 账号 D 现在能 `/admin` 看到 `[⚙️ 系统配置]`
 - [ ] 原超管降级为副管理员，仍可 `/admin` 但不可见系统配置
 - [ ] `audit_logs` 表有 `action='override_super_admin'` 一行
@@ -176,8 +176,8 @@
 
 ## 13. 备份 / 恢复
 
-- [ ] `docker compose exec -T postgres pg_dump -U bccy bccy | gzip > test-backup.sql.gz` 成功生成
-- [ ] 模拟数据丢失：停 bot → 删一个 inviter → 恢复备份 → 该 inviter 重新存在
+- [ ] `sudo -u postgres pg_dump bccy | gzip > test-backup.sql.gz` 成功生成
+- [ ] 模拟数据丢失：`sudo systemctl stop bccy-bot` → 删一个 inviter → 恢复备份（`gunzip -c test-backup.sql.gz | sudo -u postgres psql bccy`）→ 启动 → 该 inviter 重新存在
 
 ---
 
@@ -185,7 +185,7 @@
 
 - [ ] 同时让 5 个账号发起申请 → 全部正常进入 wizard 与审核流，无报错
 - [ ] 故意让 Telegram API 间歇性失败（断网测试）→ Bot 自动重试，最终成功
-- [ ] 容器重启后 wizard 中的用户仍能从原步骤继续（DB 快照恢复）
+- [ ] `sudo systemctl restart bccy-bot` 后 wizard 中的用户仍能从原步骤继续（DB 快照恢复）
 
 ---
 

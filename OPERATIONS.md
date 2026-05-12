@@ -892,7 +892,7 @@ CREATE UNIQUE INDEX uq_one_super_admin ON admins (role) WHERE role = 'super';
 flowchart TD
   Lost[/原超管账号丢失/被封/] --> SSH[SSH 登录服务器]
   SSH --> EditEnv[编辑 .env<br/>INITIAL_SUPER_ADMIN_ID=新账号 ID]
-  EditEnv --> Restart[docker compose restart bot]
+  EditEnv --> Restart[sudo systemctl restart bccy-bot]
   Restart --> Boot[Bot 启动]
   Boot --> Check{ENV.id vs DB 当前 super?}
   Check -->|一致| Noop[noop, 正常启动]

@@ -44,47 +44,51 @@
 | 配置 | pydantic-settings + `.env` |
 | 哈希 | argon2-cffi（回群密钥）|
 | 日志 | structlog |
-| 容器 | Docker + docker-compose |
+| 进程管理 | systemd（生产）|
+| 运行环境 | 原生 Python 3.11+ venv + 原生 PostgreSQL 15+ |
 
 ---
 
-## 快速开始（Docker）
+## 快速开始
 
-### 1. 准备 Bot Token 与初始管理员 ID
-
-- 在 [@BotFather](https://t.me/BotFather) 创建 Bot，拿到 Token
-- 将 Bot 拉入目标群组并设为管理员（赋"邀请用户"权限，未来需"封禁"权限做密钥清理）
-- 在 Telegram 私聊 [@userinfobot](https://t.me/userinfobot) 拿到您的 Telegram **数字 ID**（初始超级管理员）
-
-### 2. 配置 `.env`
+> 完整搭建文档（含每一步命令）见 [DEPLOYMENT.md](DEPLOYMENT.md)。下面只列骨架。
 
 ```bash
-cp .env.example .env
-# 编辑 .env，填入下列必填项：
-#   BOT_TOKEN=123456:ABC...
-#   INITIAL_SUPER_ADMIN_ID=123456789
-#   POSTGRES_PASSWORD=随机强密码
+# 1. 系统包（Debian 12+ / Ubuntu 22.04+）
+sudo apt update && sudo apt install -y python3 python3-venv \
+  postgresql postgresql-contrib build-essential libpq-dev git
+
+# 2. 建库 + 建账号
+sudo -u postgres psql -c "CREATE ROLE bccy LOGIN PASSWORD '强密码';"
+sudo -u postgres createdb -O bccy bccy
+
+# 3. 建运行账号 + 拉代码
+sudo useradd --system --shell /usr/sbin/nologin --home /opt/BC-CY-Bot bccy
+sudo git clone https://github.com/ARi1059/BC-CY-Bot.git /opt/BC-CY-Bot
+sudo chown -R bccy:bccy /opt/BC-CY-Bot
+cd /opt/BC-CY-Bot
+sudo -u bccy git checkout v1.0.0-beta.2
+
+# 4. 装依赖
+sudo -u bccy python3 -m venv .venv
+sudo -u bccy .venv/bin/pip install .
+
+# 5. 配置 .env
+sudo -u bccy cp .env.example .env
+sudo chmod 600 .env
+sudo -u bccy nano .env    # 填 BOT_TOKEN / DATABASE_URL / INITIAL_SUPER_ADMIN_ID
+
+# 6. 装 systemd + 启动
+sudo cp contrib/bccy-bot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now bccy-bot
+sudo journalctl -u bccy-bot -f    # 等 super_admin_ensured
 ```
 
-`.env` 已在 `.gitignore` 中排除，不会被提交。
-
-### 3. 启动
-
-```bash
-docker compose up -d --build
-docker compose logs -f bot         # 看日志确认 super_admin_ensured
-```
-
-首次启动会自动：
-- 初始化 PostgreSQL
-- `alembic upgrade head` 建表
-- 把 `INITIAL_SUPER_ADMIN_ID` 写入 `admins` 表（role='super'）
-
-### 4. 验证
-
-- Telegram 私聊 Bot 发送 `/start` → 看到欢迎卡片
-- 超级管理员发送 `/admin` → 进入管理面板
-- 邀请人发送 `/panel` → 进入个人面板（需先在 `/admin` → 邀请人管理添加）
+验证：
+- Telegram 私聊 Bot 发 `/start` → 欢迎卡片
+- 超管发 `/admin` → 管理面板（含 `[⚙️ 系统配置]`）
+- 邀请人发 `/panel` → 个人面板（需先在 `/admin → 邀请人管理` 添加）
 
 ---
 
@@ -93,32 +97,33 @@ docker compose logs -f bot         # 看日志确认 super_admin_ensured
 | 变量 | 必填 | 说明 |
 |------|:--:|------|
 | `BOT_TOKEN` | ✅ | Telegram Bot Token |
+| `DATABASE_URL` | ✅ | 生产：`postgresql+asyncpg://bccy:密码@127.0.0.1:5432/bccy`；开发：`sqlite+aiosqlite:///./bccy_bot.db` |
 | `INITIAL_SUPER_ADMIN_ID` | ✅ | 初始超级管理员 Telegram 数字 ID（首次启动写入；后续启动若与 DB 中超管不一致则**强制覆盖**） |
-| `DATABASE_URL` | ⭕ | 默认由 docker-compose 注入 PostgreSQL 连接串；开发可用 `sqlite+aiosqlite:///./bccy_bot.db` |
 | `LOG_LEVEL` | ⭕ | 默认 `INFO`（可选 DEBUG/WARNING/ERROR）|
 | `TIMEZONE` | ⭕ | 默认 `Asia/Shanghai` |
-| `POSTGRES_PASSWORD` | ⭕ | docker-compose 启动 postgres 服务时使用，默认 `bccy`（**生产请改强密码**）|
 
 ---
 
 ## 升级流程
 
 ```bash
-git pull
-docker compose build bot
-docker compose up -d bot           # 重建 Bot 容器，PostgreSQL 容器保持
-docker compose logs -f bot         # 确认迁移成功 + super_admin_ensured
+cd /opt/BC-CY-Bot
+sudo -u bccy git fetch --tags
+sudo -u bccy git checkout v1.0.0-beta.2
+sudo -u bccy .venv/bin/pip install --upgrade .
+sudo systemctl restart bccy-bot
+sudo journalctl -u bccy-bot -f          # 确认 alembic upgrade head + super_admin_ensured
 ```
 
-容器启动命令是 `alembic upgrade head && python -m bccy_bot`，新版本带的 schema 变更会自动应用。
+`bccy-bot.service` 在 `ExecStartPre` 会自动跑 `alembic upgrade head`，每次启动都会同步 schema。
 
 ---
 
 ## 应急换超管（账号丢失 / 被封）
 
 1. SSH 登录服务器
-2. 编辑 `.env`，把 `INITIAL_SUPER_ADMIN_ID` 改为**新超管的 Telegram 数字 ID**
-3. 重启 Bot：`docker compose restart bot`
+2. 编辑 `/opt/BC-CY-Bot/.env`，把 `INITIAL_SUPER_ADMIN_ID` 改为**新超管的 Telegram 数字 ID**
+3. 重启 Bot：`sudo systemctl restart bccy-bot`
 4. Bot 启动时检测到 `INITIAL_SUPER_ADMIN_ID` 与数据库当前超管不一致，会**强制覆盖**：
    - 旧超管降级为副管理员（保留权限）
    - 新 ID 升级为超管
@@ -133,21 +138,22 @@ docker compose logs -f bot         # 确认迁移成功 + super_admin_ensured
 ### 备份（每日定时任务示例）
 
 ```bash
-docker compose exec -T postgres pg_dump -U bccy bccy | gzip > backup-$(date +%F).sql.gz
+sudo install -d -o bccy -g bccy /opt/BC-CY-Bot/backups
+sudo -u postgres pg_dump bccy | gzip > /opt/BC-CY-Bot/backups/backup-$(date +%F).sql.gz
 ```
 
-放入 cron：
+放入 root cron：
 
 ```cron
-0 3 * * * cd /path/to/BC-CY-Bot && docker compose exec -T postgres pg_dump -U bccy bccy | gzip > backups/backup-$(date +\%F).sql.gz
+0 3 * * * /usr/bin/pg_dump -U bccy -h 127.0.0.1 bccy 2>>/opt/BC-CY-Bot/backups/dump.err | gzip > /opt/BC-CY-Bot/backups/backup-$(date +\%F).sql.gz && find /opt/BC-CY-Bot/backups -name "backup-*.sql.gz" -mtime +30 -delete
 ```
 
 ### 恢复
 
 ```bash
-docker compose down bot      # 先停 Bot 避免写冲突
-gunzip -c backup-2026-05-12.sql.gz | docker compose exec -T postgres psql -U bccy bccy
-docker compose up -d bot
+sudo systemctl stop bccy-bot       # 先停 Bot 避免写冲突
+gunzip -c backup-2026-05-12.sql.gz | sudo -u postgres psql bccy
+sudo systemctl start bccy-bot
 ```
 
 ---
@@ -155,10 +161,10 @@ docker compose up -d bot
 ## 本地开发
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 
-# 用 SQLite 跑本地：
+# 用 SQLite 跑本地，免 PostgreSQL
 export BOT_TOKEN=...
 export DATABASE_URL=sqlite+aiosqlite:///./bccy_bot.db
 export INITIAL_SUPER_ADMIN_ID=...
@@ -202,8 +208,7 @@ BC-CY-Bot/
 ├── CHANGELOG.md                版本变更记录
 ├── README.md                   本文件
 ├── TESTING.md                  端到端联调清单
-├── docker-compose.yml
-├── Dockerfile
+├── contrib/bccy-bot.service    systemd unit 模板
 ├── alembic/                    数据库迁移
 ├── src/bccy_bot/
 │   ├── config.py               pydantic-settings

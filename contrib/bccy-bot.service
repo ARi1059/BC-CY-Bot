@@ -1,0 +1,35 @@
+[Unit]
+Description=BC-CY-Bot (Telegram invite review + reimbursement)
+Documentation=https://github.com/ARi1059/BC-CY-Bot
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=bccy
+Group=bccy
+WorkingDirectory=/opt/BC-CY-Bot
+EnvironmentFile=/opt/BC-CY-Bot/.env
+
+# 启动前自动跑 schema 迁移；失败则不进入主进程
+ExecStartPre=/opt/BC-CY-Bot/.venv/bin/alembic upgrade head
+ExecStart=/opt/BC-CY-Bot/.venv/bin/python -m bccy_bot
+
+# 进程崩了 5 秒后拉起；连续失败也持续重试
+Restart=always
+RestartSec=5s
+
+# Polling 不需要监听端口，stdout/stderr 直接进 journald
+StandardOutput=journal
+StandardError=journal
+
+# 安全加固（按需放宽）
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/BC-CY-Bot
+
+[Install]
+WantedBy=multi-user.target

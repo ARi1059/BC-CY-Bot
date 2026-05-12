@@ -85,9 +85,6 @@ Thumbs.db
 .project
 .pydevproject
 
-# ===== Docker =====
-docker-compose.override.yml
-
 # ===== Misc =====
 tmp/
 temp/
