@@ -31,6 +31,13 @@ async def on_use_recovery_key(update: Update, context: ContextTypes.DEFAULT_TYPE
         "ℹ️ 此功能仅适用于原账号丢失/封禁后用新账号回群；\n"
         "若与原账号相同将被拦截。"
     )
+    # 优先就地编辑欢迎卡片为当前提示，避免聊天页堆积
+    if update.callback_query is not None:
+        try:
+            await update.callback_query.edit_message_text(text, reply_markup=cancel_awaiting_keyboard())
+            return
+        except Exception:  # noqa: BLE001
+            pass
     if update.effective_message is not None:
         await update.effective_message.reply_text(text, reply_markup=cancel_awaiting_keyboard())
 

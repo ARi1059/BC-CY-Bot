@@ -393,5 +393,5 @@ async def on_material_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             await message.reply_text(f"⚠️ {e}")
             return
 
-        await message.reply_text("✅ 已收到，下一步：")
+        # 不再发送独立的「✅ 已收到」消息，下一步提示自身就是确认
         await _send_current_step(update, new_info, session)

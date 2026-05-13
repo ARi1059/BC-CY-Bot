@@ -530,6 +530,6 @@ async def consume_material_message(
             await reimbursement_repo.list_materials(session, active.id) if new_info.is_preview else None
         )
 
-    await update.message.reply_text("✅ 已收到，下一步：")
+    # 不再发送独立的「✅ 已收到」消息，下一步提示自身就是确认
     await _send_step(update, new_info, materials_for_preview=materials)
     return True
