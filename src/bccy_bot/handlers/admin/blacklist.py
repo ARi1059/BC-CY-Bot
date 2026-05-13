@@ -14,6 +14,7 @@ from bccy_bot.keyboards.admin_factory import (
     blacklist_list_keyboard,
     blacklist_remove_confirm_keyboard,
 )
+from bccy_bot.keyboards.awaiting_keyboard import cancel_awaiting_keyboard
 from bccy_bot.repositories import admin_repo, blacklist_repo
 from bccy_bot.utils.awaiting import clear_awaiting, get_awaiting, set_awaiting
 from bccy_bot.utils.session import session_scope
@@ -50,8 +51,8 @@ async def on_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await edit_or_reply(
         update,
         "📝 添加黑名单 · 1/2\n"
-        "请发送目标用户的 Telegram 数字 ID（如 123456789）。\n"
-        "发送 /cancel 取消。",
+        "请发送目标用户的 Telegram 数字 ID（如 123456789）。",
+        reply_markup=cancel_awaiting_keyboard(),
     )
 
 
@@ -124,7 +125,8 @@ async def consume_add_blacklist_text(
         state["data"]["telegram_user_id"] = uid
         state["data"]["step"] = 2
         await update.message.reply_text(
-            "📝 步骤 2/2：请发送拉黑【原因】（可选，发送 /skip 跳过）。"
+            "📝 步骤 2/2：请发送拉黑【原因】（可选，发送 /skip 跳过）。",
+            reply_markup=cancel_awaiting_keyboard(),
         )
         return True
 

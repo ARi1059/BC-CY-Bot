@@ -186,6 +186,7 @@ async def notify_admins(
             applicant_telegram_id=request.applicant_telegram_id,
             applicant_username=request.applicant_username,
             amount_cents=request.amount_cents,
+            teacher_username=request.teacher_username_snapshot,
         )
     except Exception:  # noqa: BLE001
         log.exception("rei_log_new_failed", reimbursement_id=request.id)
@@ -390,6 +391,7 @@ async def approve_request_step1(
             amount_cents=request.amount_cents,
             reviewer_telegram_id=reviewer_telegram_id,
             reviewer_display=reviewer_display,
+            teacher_username=request.teacher_username_snapshot,
         )
     except Exception:  # noqa: BLE001
         log.exception("rei_log_approved_failed", reimbursement_id=request.id)
@@ -469,12 +471,18 @@ async def confirm_payment(
 
     # 转发口令给申请人（v1.0.0-beta.4：行内代码样式，点击/长按可复制）
     amount_yuan = reimbursement_settings.cents_to_yuan_display(request.amount_cents)
+    expire_notice = (
+        "⏰ 重要：支付宝口令 24 小时后将自动退回。\n"
+        "• 超时未领取视为本次报销已完成\n"
+        "• 本次报销将无法重新申领，请尽快领取"
+    )
     text_html = (
         f"🎁 您的报销已批准并发放！\n"
         f"金额：{amount_yuan} 元\n\n"
         f"口令（点击/长按可复制）：\n"
         f"<code>{html_escape(code)}</code>\n\n"
-        f"请复制此口令在支付宝中兑换。"
+        f"请尽快复制此口令在支付宝中兑换。\n\n"
+        f"{expire_notice}"
     )
     try:
         await bot.send_message(
@@ -489,7 +497,10 @@ async def confirm_payment(
             await _send_text(
                 bot,
                 chat_id=request.applicant_telegram_id,
-                text=f"🎁 您的报销已批准并发放！\n金额：{amount_yuan} 元\n\n口令：\n{code}",
+                text=(
+                    f"🎁 您的报销已批准并发放！\n金额：{amount_yuan} 元\n\n"
+                    f"口令：\n{code}\n\n{expire_notice}"
+                ),
             )
         except BadRequest:
             pass
@@ -514,6 +525,7 @@ async def confirm_payment(
             amount_cents=request.amount_cents,
             reviewer_telegram_id=reviewer_telegram_id,
             reviewer_display=reviewer_display,
+            teacher_username=request.teacher_username_snapshot,
         )
     except Exception:  # noqa: BLE001
         log.exception("rei_log_paid_failed", reimbursement_id=request.id)
@@ -595,6 +607,7 @@ async def reject_request(
             reviewer_telegram_id=reviewer_telegram_id,
             reviewer_display=reviewer_display,
             reason=reason,
+            teacher_username=request.teacher_username_snapshot,
         )
     except Exception:  # noqa: BLE001
         log.exception("rei_log_rejected_failed", reimbursement_id=request.id)

@@ -28,6 +28,7 @@ from bccy_bot.keyboards.admin_factory import (
     teacher_remove_confirm_keyboard,
     teacher_tier_picker_keyboard,
 )
+from bccy_bot.keyboards.awaiting_keyboard import cancel_awaiting_keyboard
 from bccy_bot.repositories import reimburse_teacher_repo
 from bccy_bot.utils.awaiting import (
     clear_awaiting,
@@ -142,10 +143,9 @@ async def on_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (
         "📝 添加报销老师 · 步骤 1/4\n"
         "─────────────────────────\n"
-        "请发送老师的 **Telegram username**（不含 @，如 alice_li）。\n\n"
-        "发送 /cancel 取消。"
+        "请发送老师的 **Telegram username**（不含 @，如 alice_li）。"
     )
-    await edit_or_reply(update, text)
+    await edit_or_reply(update, text, reply_markup=cancel_awaiting_keyboard())
 
 
 async def _push_pick_tier(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -155,7 +155,9 @@ async def _push_pick_tier(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         "该老师每次报销发放金额。"
     )
     if update.effective_message is not None:
-        await update.effective_message.reply_text(text, reply_markup=teacher_add_pick_tier_keyboard())
+        await update.effective_message.reply_text(
+            text, reply_markup=teacher_add_pick_tier_keyboard()
+        )
 
 
 async def _push_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -333,7 +335,8 @@ async def on_set_group_open(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     )
     await edit_or_reply(
         update,
-        f"🏷 修改组别\n─────────────────────────\n{label}\n\n请发送新的组别名（≤ 32 字）；发送 /cancel 取消。",
+        f"🏷 修改组别\n─────────────────────────\n{label}\n\n请发送新的组别名（≤ 32 字）。",
+        reply_markup=cancel_awaiting_keyboard(),
     )
 
 
@@ -382,7 +385,8 @@ async def consume_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bo
             return True
         update_awaiting_data(context, update.effective_user.id, telegram_username=un, step=2)
         await update.message.reply_text(
-            "📝 步骤 2/4：请发送老师【显示名】（如 张老师，≤ 64 字）。"
+            "📝 步骤 2/4：请发送老师【显示名】（如 张老师，≤ 64 字）。",
+            reply_markup=cancel_awaiting_keyboard(),
         )
         return True
     if step == 2:
@@ -391,7 +395,8 @@ async def consume_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bo
             return True
         update_awaiting_data(context, update.effective_user.id, display_name=text, step=3)
         await update.message.reply_text(
-            "📝 步骤 3/4：请发送【组别名】（如 A组，≤ 32 字）。"
+            "📝 步骤 3/4：请发送【组别名】（如 A组，≤ 32 字）。",
+            reply_markup=cancel_awaiting_keyboard(),
         )
         return True
     if step == 3:

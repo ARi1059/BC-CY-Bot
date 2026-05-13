@@ -26,6 +26,7 @@ from bccy_bot.handlers.admin import (
     stubs as adm_stubs,
     teachers as adm_teachers,
 )
+from bccy_bot.handlers.common import cancel as common_cancel
 from bccy_bot.handlers.common import chat_member as chat_member_handler
 from bccy_bot.handlers.inviter import audit as inviter_audit
 from bccy_bot.handlers.inviter import panel as inviter_panel
@@ -114,6 +115,7 @@ from bccy_bot.keyboards.admin_callbacks import (
     ADM_REPORT_CHANNEL_UNBIND,
     ADM_STATS,
 )
+from bccy_bot.keyboards.awaiting_keyboard import AWT_CANCEL
 from bccy_bot.keyboards.callback_data import (
     INVITER_APPROVE_PREFIX,
     INVITER_REJECT_PREFIX,
@@ -687,6 +689,11 @@ def build_application() -> Application:
         CallbackQueryHandler(
             inviter_panel.on_repost_materials, pattern=f"^{INV_PANEL_REPOST_PREFIX}\\d+$"
         )
+    )
+
+    # === 通用：取消当前等待输入态 ===
+    application.add_handler(
+        CallbackQueryHandler(common_cancel.on_awaiting_cancel, pattern=f"^{AWT_CANCEL}$")
     )
 
     # === chat_member 更新（监听入群事件） ===

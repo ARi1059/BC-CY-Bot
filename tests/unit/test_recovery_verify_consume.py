@@ -320,9 +320,10 @@ async def test_success_flow_bans_normal_old_account_in_group(session):
     """v1.0.0-beta.3：正常账号 + 在群内的清理策略改为永久封禁（不再 unban）。"""
     grp, _, app = await _seed(session)
     _, plaintext = await _issue_key(session, app)
+    original_owner_id = app.applicant_telegram_id  # consume 后会被覆盖为 claimer
 
     bot = FakeBot()
-    bot.member_lookup[(grp.telegram_chat_id, app.applicant_telegram_id)] = _MemberStub(
+    bot.member_lookup[(grp.telegram_chat_id, original_owner_id)] = _MemberStub(
         status="member",
         user=type("U", (), {"first_name": "Alice", "last_name": None, "username": "alice"}),
     )
@@ -331,18 +332,21 @@ async def test_success_flow_bans_normal_old_account_in_group(session):
         session, bot, key_plaintext=plaintext, claimer_telegram_id=999,
     )
     assert r.success is True
-    assert bot.banned_users == [(grp.telegram_chat_id, app.applicant_telegram_id)]
+    assert bot.banned_users == [(grp.telegram_chat_id, original_owner_id)]
     # 不再 unban —— 永久封禁
     assert bot.unbanned_users == []
+    # 申请记录的当前持有人已迁移到新账号
+    assert app.applicant_telegram_id == 999
 
 
 @pytest.mark.asyncio
 async def test_success_flow_bans_deactivated_old_account(session):
     grp, _, app = await _seed(session)
     _, plaintext = await _issue_key(session, app)
+    original_owner_id = app.applicant_telegram_id
 
     bot = FakeBot()
-    bot.member_lookup[(grp.telegram_chat_id, app.applicant_telegram_id)] = _MemberStub(
+    bot.member_lookup[(grp.telegram_chat_id, original_owner_id)] = _MemberStub(
         status="member",
         user=type("U", (), {"first_name": "Deleted Account", "last_name": None, "username": None}),
     )
@@ -353,14 +357,16 @@ async def test_success_flow_bans_deactivated_old_account(session):
     assert r.success is True
 
     # 永久封禁（banned 但未 unban）
-    assert bot.banned_users == [(grp.telegram_chat_id, app.applicant_telegram_id)]
+    assert bot.banned_users == [(grp.telegram_chat_id, original_owner_id)]
     assert bot.unbanned_users == []
 
     # 本地黑名单已写入
     bl = (
         await session.execute(
-            select(Blacklist).where(Blacklist.telegram_user_id == app.applicant_telegram_id)
+            select(Blacklist).where(Blacklist.telegram_user_id == original_owner_id)
         )
     ).scalar_one_or_none()
     assert bl is not None
     assert "注销" in (bl.reason or "")
+    # 申请记录的当前持有人已迁移到新账号
+    assert app.applicant_telegram_id == 999

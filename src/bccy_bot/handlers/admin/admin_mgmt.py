@@ -17,6 +17,7 @@ from bccy_bot.keyboards.admin_factory import (
     admin_remove_confirm_keyboard,
     admin_transfer_confirm_keyboard,
 )
+from bccy_bot.keyboards.awaiting_keyboard import cancel_awaiting_keyboard
 from bccy_bot.repositories import admin_repo
 from bccy_bot.utils.awaiting import clear_awaiting, get_awaiting, set_awaiting
 from bccy_bot.utils.session import session_scope
@@ -57,7 +58,8 @@ async def on_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     set_awaiting(context, update.effective_user.id, AWAIT_KIND)
     await edit_or_reply(
         update,
-        "📝 添加副管理员\n请发送目标用户的 Telegram 数字 ID。\n发送 /cancel 取消。",
+        "📝 添加副管理员\n请发送目标用户的 Telegram 数字 ID。",
+        reply_markup=cancel_awaiting_keyboard(),
     )
 
 

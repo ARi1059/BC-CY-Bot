@@ -24,6 +24,7 @@ from bccy_bot.keyboards.admin_factory import (
     reimbursement_pending_list_keyboard,
     reimbursement_settings_keyboard,
 )
+from bccy_bot.keyboards.awaiting_keyboard import cancel_awaiting_keyboard
 from bccy_bot.repositories import (
     admin_repo,
     eligibility_chat_repo,
@@ -139,8 +140,8 @@ async def on_set_budget(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await edit_or_reply(
         update,
         "✏️ 请发送月预算（元，整数或最多 2 位小数）。\n"
-        "设置后不会立即重置当前剩余，如需立即重置可点【♻️ 重置当前月余额】。\n"
-        "发送 /cancel 取消。",
+        "设置后不会立即重置当前剩余，如需立即重置可点【♻️ 重置当前月余额】。",
+        reply_markup=cancel_awaiting_keyboard(),
     )
 
 
@@ -155,8 +156,8 @@ async def on_set_payment_relay(update: Update, context: ContextTypes.DEFAULT_TYP
     await edit_or_reply(
         update,
         "✏️ 请发送【口令发放员】的 Telegram 数字 ID（一串数字）。\n"
-        "发送 0 表示取消配置（fallback 到审核者自填口令）。\n"
-        "发送 /cancel 取消本次修改。",
+        "发送 0 表示取消配置（fallback 到审核者自填口令）。",
+        reply_markup=cancel_awaiting_keyboard(),
     )
 
 
@@ -181,7 +182,8 @@ async def on_set_cooldown(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await edit_or_reply(
         update,
         f"✏️ 请发送默认冷却天数（{reimbursement_settings.MIN_COOLDOWN_DAYS}-"
-        f"{reimbursement_settings.MAX_COOLDOWN_DAYS}）。\n发送 /cancel 取消。",
+        f"{reimbursement_settings.MAX_COOLDOWN_DAYS}）。",
+        reply_markup=cancel_awaiting_keyboard(),
     )
 
 
@@ -196,7 +198,8 @@ async def on_set_reset_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         update,
         f"✏️ 请发送预算重置日（{reimbursement_settings.MIN_RESET_DAY}-"
         f"{reimbursement_settings.MAX_RESET_DAY}）。\n"
-        "每月该日的 00:00 自动把【月剩余】重置为【月预算】。\n发送 /cancel 取消。",
+        "每月该日的 00:00 自动把【月剩余】重置为【月预算】。",
+        reply_markup=cancel_awaiting_keyboard(),
     )
 
 
@@ -234,7 +237,8 @@ async def on_eligibility_add(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await edit_or_reply(
         update,
         "📥 请将目标【群组或频道】中的任一条消息**转发**到此处。\n"
-        "Bot 须已是该群/频道的管理员，才能调用 getChatMember 校验。\n\n发送 /cancel 取消。",
+        "Bot 须已是该群/频道的管理员，才能调用 getChatMember 校验。",
+        reply_markup=cancel_awaiting_keyboard(),
     )
 
 
@@ -318,8 +322,8 @@ async def on_override_add(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         "`<telegram_user_id> <冷却天数> [备注]`\n\n"
         "示例：\n"
         "  `123456789 14 长期会员`\n"
-        "  `987654321 3`\n\n"
-        "发送 /cancel 取消。",
+        "  `987654321 3`",
+        reply_markup=cancel_awaiting_keyboard(),
     )
 
 
@@ -699,5 +703,6 @@ async def on_resend_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         update,
         f"💸 请发送 #R{rei_id} 的支付宝口令红包文本。\n"
         "Bot 将自动转发给申请人。\n"
-        "（发送 /cancel 放弃；状态保留为'已批准待付款'，下次可继续补发。）",
+        "（点取消则状态保留为「已批准待付款」，下次可继续补发。）",
+        reply_markup=cancel_awaiting_keyboard(),
     )

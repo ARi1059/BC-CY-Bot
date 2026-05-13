@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 from bccy_bot.db.models.enums import SK_INVITE_LINK_TTL_HOURS
 from bccy_bot.handlers.admin._common import ack, edit_or_reply, require_super
 from bccy_bot.keyboards.admin_factory import config_panel_keyboard
+from bccy_bot.keyboards.awaiting_keyboard import cancel_awaiting_keyboard
 from bccy_bot.repositories import settings_repo
 from bccy_bot.services import invite_link_service
 from bccy_bot.utils.awaiting import clear_awaiting, get_awaiting, set_awaiting
@@ -41,7 +42,8 @@ async def on_edit_ttl(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     set_awaiting(context, update.effective_user.id, AWAIT_KIND)
     await edit_or_reply(
         update,
-        "✏️ 请发送新的邀请链接有效期（小时，整数，范围 1–168）。\n发送 /cancel 取消。",
+        "✏️ 请发送新的邀请链接有效期（小时，整数，范围 1–168）。",
+        reply_markup=cancel_awaiting_keyboard(),
     )
 
 

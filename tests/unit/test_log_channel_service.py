@@ -208,7 +208,8 @@ async def test_link_expired_card(session):
     bot = FakeBot()
     await log_channel_service.push_link_expired(session, bot, link)
     msg = bot.sent_texts[0]
-    assert "⚠️ 链接过期未用" in msg.text
+    assert "链接过期未用" in msg.text
+    assert "#链接过期" in msg.text
     assert f"App-{app.id}" in msg.text
 
 

@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 from bccy_bot.db.models.enums import SK_ATTACK_REPORT_CHANNEL_ID, SK_LOG_CHANNEL_ID
 from bccy_bot.handlers.admin._common import ack, edit_or_reply, require_admin
 from bccy_bot.keyboards.admin_factory import channel_panel_keyboard
+from bccy_bot.keyboards.awaiting_keyboard import cancel_awaiting_keyboard
 from bccy_bot.repositories import settings_repo
 from bccy_bot.utils.awaiting import clear_awaiting, get_awaiting, set_awaiting
 from bccy_bot.utils.session import session_scope
@@ -63,7 +64,8 @@ async def _request_forward(
     await edit_or_reply(
         update,
         f"📥 请将目标【{label}】中的【任意一条消息】**转发**到此处。\n"
-        "（Bot 须已是该频道的管理员）\n\n发送 /cancel 取消。",
+        "（Bot 须已是该频道的管理员）",
+        reply_markup=cancel_awaiting_keyboard(),
     )
 
 

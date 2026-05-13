@@ -39,6 +39,29 @@ async def get_active_key_for_application(
     return result.scalar_one_or_none()
 
 
+async def find_used_for_app_and_claimer(
+    session: AsyncSession, *, application_id: int, claimer_telegram_id: int
+) -> RecoveryKey | None:
+    """查找一条「status=used，application_id 匹配，且 used_by 等于 claimer」的密钥。
+
+    chat_member 监听新账号入群时用来识别这是回群密钥救济场景：
+    若返回非 None，本次入群应记为「用户回群」而非异常告警。
+    """
+    from bccy_bot.db.models.enums import RK_USED
+
+    result = await session.execute(
+        select(RecoveryKey)
+        .where(
+            RecoveryKey.application_id == application_id,
+            RecoveryKey.used_by_telegram_id == claimer_telegram_id,
+            RecoveryKey.status == RK_USED,
+        )
+        .order_by(RecoveryKey.used_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 async def get_active_key_for_owner(
     session: AsyncSession, owner_telegram_id: int
 ) -> RecoveryKey | None:

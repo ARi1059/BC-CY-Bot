@@ -123,13 +123,22 @@ async def issue_chained_key(
     *,
     owner_telegram_id: int,
     previous_key_id: int,
+    original_owner_telegram_id: int | None = None,
 ) -> tuple[RecoveryKey, str]:
-    """密钥成功使用后给新持有人签发链式新密钥。"""
+    """密钥成功使用后给新持有人签发链式新密钥。
+
+    `original_owner_telegram_id` 显式传入以保留整条链上"首次申请人"的引用；
+    缺省时退化为 application.applicant_telegram_id（兼容旧路径）。
+    """
     plaintext = generate_key_plaintext()
     record = RecoveryKey(
         application_id=application.id,
         owner_telegram_id=owner_telegram_id,
-        original_owner_telegram_id=application.applicant_telegram_id,
+        original_owner_telegram_id=(
+            original_owner_telegram_id
+            if original_owner_telegram_id is not None
+            else application.applicant_telegram_id
+        ),
         key_hash=hash_key(plaintext),
         key_prefix=key_prefix_display(plaintext),
         status=RK_ACTIVE,
@@ -295,14 +304,21 @@ async def verify_and_consume(
     matched.used_by_telegram_id = claimer_telegram_id
     matched.used_at = datetime.now(timezone.utc)
     matched.cleanup_action = CLEANUP_PENDING
+
+    # 覆盖申请记录的当前持有人 —— 让后续 chat_member 检测视为正常入群（非异常）
+    # 历史原账号 ID 仍可在 recovery_keys.original_owner_telegram_id / chained 链路追溯
+    application.applicant_telegram_id = claimer_telegram_id
+    application.applicant_username = claimer_username
     await session.flush()
 
     # 3. 链式签发新密钥（绑定新持有人）
+    # original_owner_telegram_id 从被消费的旧 key 继承，避免被刚才的 application 覆盖污染
     new_record, new_plaintext = await issue_chained_key(
         session,
         application,
         owner_telegram_id=claimer_telegram_id,
         previous_key_id=matched.id,
+        original_owner_telegram_id=matched.original_owner_telegram_id,
     )
 
     # 4. 触发原账号清理（不阻塞主流程）

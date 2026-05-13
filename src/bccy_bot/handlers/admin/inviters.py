@@ -31,6 +31,7 @@ from bccy_bot.keyboards.admin_factory import (
     inviter_list_keyboard,
     inviter_remove_confirm_keyboard,
 )
+from bccy_bot.keyboards.awaiting_keyboard import cancel_awaiting_keyboard
 from bccy_bot.repositories import group_repo, inviter_repo
 from bccy_bot.utils.awaiting import (
     clear_awaiting,
@@ -146,10 +147,9 @@ async def on_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "📝 添加邀请人 · 步骤 1/5\n"
         "─────────────────────────\n"
         "请发送邀请人的 **Telegram 数字 ID**（如 123456789）。\n"
-        "若该邀请人为「挂名」（无 Telegram 账号），请发送 /skip。\n\n"
-        "发送 /cancel 取消。"
+        "若该邀请人为「挂名」（无 Telegram 账号），请发送 /skip。"
     )
-    await edit_or_reply(update, text)
+    await edit_or_reply(update, text, reply_markup=cancel_awaiting_keyboard())
 
 
 async def _push_step3_group_picker(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -388,7 +388,8 @@ async def consume_add_inviter_text(
                 return True
             update_awaiting_data(context, update.effective_user.id, telegram_user_id=uid, step=2)
         await update.message.reply_text(
-            "📝 步骤 2/5：请发送邀请人的【显示名】（如 张老师）。"
+            "📝 步骤 2/5：请发送邀请人的【显示名】（如 张老师）。",
+            reply_markup=cancel_awaiting_keyboard(),
         )
         return True
 

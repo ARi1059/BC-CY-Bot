@@ -18,6 +18,7 @@ from bccy_bot.keyboards.callback_data import (
     parse_reject_skip,
     parse_view_materials,
 )
+from bccy_bot.keyboards.awaiting_keyboard import cancel_awaiting_keyboard
 from bccy_bot.keyboards.factory import reject_choice_keyboard
 from bccy_bot.repositories import admin_repo, inviter_repo
 from bccy_bot.services import audit_service
@@ -179,8 +180,8 @@ async def on_reject_reason(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     try:
         await update.callback_query.edit_message_text(
-            f"✏️ 请在下一条消息中发送【拒绝原因】(申请 #{app_id})\n"
-            "（5 分钟内有效；发送 /cancel 放弃本次拒绝。）"
+            f"✏️ 请在下一条消息中发送【拒绝原因】(申请 #{app_id})",
+            reply_markup=cancel_awaiting_keyboard(),
         )
     except Exception:  # noqa: BLE001
         pass

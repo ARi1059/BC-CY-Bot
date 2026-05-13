@@ -19,7 +19,7 @@ from telegram import Bot
 
 from bccy_bot.db.models.application import Application
 from bccy_bot.db.models.invite_link import InviteLink
-from bccy_bot.repositories import invite_link_repo
+from bccy_bot.repositories import invite_link_repo, recovery_key_repo
 from bccy_bot.services import log_channel_service
 
 log = structlog.get_logger()
@@ -61,7 +61,23 @@ async def on_member_joined(
         return link
 
     app = await session.get(Application, link.application_id)
-    is_anomaly = (app is not None and joined_user_id != app.applicant_telegram_id)
+
+    # 回群密钥救济：若申请下存在 status=used 且 used_by=本人 的密钥，则此次入群是
+    # 凭密钥换链接后的回群，应归类为「用户回群」而非「异常入群」。
+    recovery_key = None
+    if app is not None:
+        recovery_key = await recovery_key_repo.find_used_for_app_and_claimer(
+            session,
+            application_id=link.application_id,
+            claimer_telegram_id=joined_user_id,
+        )
+
+    is_recovery_rejoin = recovery_key is not None
+    is_anomaly = (
+        not is_recovery_rejoin
+        and app is not None
+        and joined_user_id != app.applicant_telegram_id
+    )
 
     link.is_used = True
     link.used_by_telegram_id = joined_user_id
@@ -69,7 +85,16 @@ async def on_member_joined(
     link.is_anomaly = is_anomaly
     await session.flush()
 
-    if is_anomaly:
+    if is_recovery_rejoin:
+        log.info(
+            "invite_link_used_recovery_rejoin",
+            link_id=link.id,
+            link_name=invite_link_name,
+            application_id=link.application_id,
+            joined_user_id=joined_user_id,
+            recovery_key_id=recovery_key.id if recovery_key else None,
+        )
+    elif is_anomaly:
         log.warning(
             "invite_link_anomaly",
             link_id=link.id,
@@ -90,7 +115,14 @@ async def on_member_joined(
     # 日志频道推送（[REQ §3.6.2]）：失败不阻塞主流程
     if bot is not None:
         try:
-            if is_anomaly:
+            if is_recovery_rejoin:
+                await log_channel_service.push_user_rejoined(
+                    session, bot, app, link,
+                    joined_user_id=joined_user_id,
+                    joined_username=joined_username,
+                    recovery_key=recovery_key,
+                )
+            elif is_anomaly:
                 await log_channel_service.push_anomaly(
                     session, bot, app, link,
                     joined_user_id=joined_user_id, joined_username=joined_username,

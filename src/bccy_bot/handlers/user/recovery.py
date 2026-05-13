@@ -1,10 +1,10 @@
 """[🔑 我有回群密钥] 入口 + 密钥文本消费 → 7 条校验 + 一次性新链接。"""
 
 import structlog
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update
 from telegram.ext import ContextTypes
 
-from bccy_bot.keyboards.callback_data import USER_CANCEL
+from bccy_bot.keyboards.awaiting_keyboard import cancel_awaiting_keyboard
 from bccy_bot.services import recovery_key_service
 from bccy_bot.utils.awaiting import clear_awaiting, get_awaiting, set_awaiting
 from bccy_bot.utils.session import session_scope
@@ -12,10 +12,6 @@ from bccy_bot.utils.session import session_scope
 log = structlog.get_logger()
 
 AWAIT_KIND = "recovery_key_input"
-
-
-def _cancel_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[InlineKeyboardButton("« 返回", callback_data=USER_CANCEL)]])
 
 
 async def on_use_recovery_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -36,7 +32,7 @@ async def on_use_recovery_key(update: Update, context: ContextTypes.DEFAULT_TYPE
         "若与原账号相同将被拦截。"
     )
     if update.effective_message is not None:
-        await update.effective_message.reply_text(text, reply_markup=_cancel_keyboard())
+        await update.effective_message.reply_text(text, reply_markup=cancel_awaiting_keyboard())
 
 
 async def consume_recovery_key_text(

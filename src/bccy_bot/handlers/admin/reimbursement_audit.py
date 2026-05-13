@@ -10,6 +10,7 @@ from bccy_bot.db.models.enums import (
     REI_STATUS_PENDING,
 )
 from bccy_bot.db.models.reimbursement_request import ReimbursementRequest
+from bccy_bot.keyboards.awaiting_keyboard import cancel_awaiting_keyboard
 from bccy_bot.keyboards.reimburse_audit_callbacks import (
     parse_approve,
     parse_cancel_wait,
@@ -126,7 +127,8 @@ async def on_approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         update,
         f"✅ 已批准 #R{intent.reimbursement_id}。\n"
         "请在下一条消息发送【支付宝口令红包文本】，Bot 将自动转发给申请人。\n"
-        "（如需放弃此次发放可发送 /cancel；状态会保留为'已批准待付款'，可在管理面板补发。）",
+        "（如点取消，状态保留为「已批准待付款」，可在管理面板补发。）",
+        reply_markup=cancel_awaiting_keyboard(),
     )
 
 
@@ -178,8 +180,8 @@ async def on_reject_reason(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     )
     try:
         await update.callback_query.edit_message_text(
-            f"✏️ 请发送拒绝原因 (报销 #R{rei_id})\n"
-            "发送 /cancel 放弃本次拒绝。"
+            f"✏️ 请发送拒绝原因 (报销 #R{rei_id})",
+            reply_markup=cancel_awaiting_keyboard(),
         )
     except Exception:  # noqa: BLE001
         pass
@@ -373,8 +375,8 @@ async def on_relay_enter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await _reply(
         update,
         f"🧧 已进入输入状态（#R{rei_id}）。\n"
-        "请直接发送【支付宝口令红包文本】，Bot 将自动转发给申请人。\n"
-        "发送 /cancel 取消。",
+        "请直接发送【支付宝口令红包文本】，Bot 将自动转发给申请人。",
+        reply_markup=cancel_awaiting_keyboard(),
     )
 
 

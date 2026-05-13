@@ -14,6 +14,7 @@ from bccy_bot.keyboards.admin_factory import (
     group_list_keyboard,
     group_remove_confirm_keyboard,
 )
+from bccy_bot.keyboards.awaiting_keyboard import cancel_awaiting_keyboard
 from bccy_bot.repositories import group_repo
 from bccy_bot.utils.awaiting import clear_awaiting, set_awaiting
 from bccy_bot.utils.session import session_scope
@@ -54,10 +55,9 @@ async def on_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     set_awaiting(context, update.effective_user.id, AWAIT_KIND)
     text = (
         "📥 请将目标群组中的【任意一条消息】**转发**给我。\n"
-        "（Bot 须已在该群中，并具备「邀请用户」权限）\n\n"
-        "发送 /cancel 取消。"
+        "（Bot 须已在该群中，并具备「邀请用户」权限）"
     )
-    await edit_or_reply(update, text)
+    await edit_or_reply(update, text, reply_markup=cancel_awaiting_keyboard())
 
 
 async def on_remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
