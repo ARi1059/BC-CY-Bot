@@ -515,10 +515,14 @@ sudo journalctl -u bccy-bot | grep super_admin_ensured
 cd /opt/BC-CY-Bot
 sudo -u bccy git fetch --tags
 sudo -u bccy git checkout v1.0.0-beta.4
-sudo -u bccy .venv/bin/pip install --upgrade .
+sudo -u bccy .venv/bin/pip install --upgrade .   # ⚠️ 必做：本项目用拷贝式安装
 sudo systemctl restart bccy-bot
 sudo journalctl -u bccy-bot -f
 ```
+
+> ⚠️ **`pip install --upgrade .` 这一步不能跳**：本项目 `pyproject.toml` 使用拷贝式安装（非 `pip install -e .` editable），系统服务运行的是
+> `.venv/lib/python3.11/site-packages/bccy_bot/` 下的副本，而非 `src/` 源码。`git pull` 只更新 `src/`，**不会自动同步到 venv**。
+> 跳过这步会导致新增文件 import 失败、修改过的文件继续跑旧逻辑（看似启动正常但功能没更新）。
 
 `bccy-bot.service` 的 `ExecStartPre` 会自动跑 `alembic upgrade head`，无需手动迁移。跨大版本（v1.x → v2.x）前一定先备份。
 
